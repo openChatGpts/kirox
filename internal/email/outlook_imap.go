@@ -2,7 +2,6 @@ package email
 
 import (
 	"bufio"
-	"bytes"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -348,58 +347,6 @@ func (c *imapClient) fetchLatestBody(seq int) (string, error) {
 	return raw, nil
 }
 
-// extractCode 从邮件正文中提取 6 位数字验证码
-func extractCode(body string) string {
-	re := regexp.MustCompile(`\b(\d{6})\b`)
-	matches := re.FindStringSubmatch(body)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return ""
-}
-
-// fetchLatestHeaders 获取最新 N 封邮件的头部
-func (c *imapClient) fetchLatestHeaders(total, count int) error {
-	if total == 0 {
-		log.Println("[IMAP] 收件箱为空")
-		return nil
-	}
-	start := total - count + 1
-	if start < 1 {
-		start = 1
-	}
-
-	tag, err := c.sendCommand(fmt.Sprintf("FETCH %d:%d (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])", start, total))
-	if err != nil {
-		return err
-	}
-	lines, result, err := c.readUntilTag(tag)
-	if err != nil {
-		return err
-	}
-	if !strings.Contains(result, "OK") {
-		return fmt.Errorf("FETCH 失败: %s", result)
-	}
-
-	var buf bytes.Buffer
-	idx := 0
-	for _, line := range lines {
-		if strings.Contains(line, "FETCH") {
-			if buf.Len() > 0 {
-				fmt.Printf("--- 邮件 %d ---\n%s\n", idx, buf.String())
-			}
-			buf.Reset()
-			idx++
-		} else if line != ")" && line != "" {
-			buf.WriteString(line + "\n")
-		}
-	}
-	if buf.Len() > 0 {
-		fmt.Printf("--- 邮件 %d ---\n%s\n", idx, buf.String())
-	}
-	return nil
-}
-
 // WaitForOTP 通过 IMAP 轮询等待 AWS 验证码
 func WaitForOTP(acc OutlookAccount, beforeCount, timeout, interval int) (string, error) {
 	log.Printf("[Outlook IMAP] 等待验证码, 邮箱=%s, 发送前邮件数=%d", acc.Email, beforeCount)
@@ -409,6 +356,7 @@ func WaitForOTP(acc OutlookAccount, beforeCount, timeout, interval int) (string,
 		return "", fmt.Errorf("刷新 Outlook Token 失败: %v", err)
 	}
 
+	codeRegex := regexp.MustCompile(`\b(\d{6})\b`)
 	maxRetries := timeout / interval
 	consecutiveSelectFail := 0
 	maxConsecutiveSelectFail := 3 // 连续 3 次 SELECT 失败则提前放弃，避免单账号卡住整批
@@ -457,7 +405,7 @@ func WaitForOTP(acc OutlookAccount, beforeCount, timeout, interval int) (string,
 			if err != nil {
 				continue
 			}
-			code := extractCode(body)
+			code := extractCodeFromText(body, codeRegex)
 			if code != "" {
 				log.Printf("[Outlook IMAP] 获取到验证码: %s", code)
 				client.close()
@@ -507,51 +455,4 @@ func GetInboxCount(acc OutlookAccount) (int, error) {
 		return total, nil
 	}
 	return 0, lastErr
-}
-
-// RunIMAPTest IMAP 测试入口
-func RunIMAPTest(csvPath string, index int) {
-	accounts, err := ParseOutlookCSV(csvPath)
-	if err != nil {
-		log.Fatalf("读取 CSV 失败: %v", err)
-	}
-	if len(accounts) == 0 {
-		log.Fatal("CSV 中没有账号")
-	}
-
-	if index < 0 || index >= len(accounts) {
-		index = 0
-	}
-	acc := accounts[index]
-	log.Printf("测试邮箱: %s (第 %d 个)", acc.Email, index+1)
-
-	log.Println("刷新 OAuth Token...")
-	accessToken, err := RefreshOutlookToken(acc)
-	if err != nil {
-		log.Fatalf("刷新 Token 失败: %v", err)
-	}
-	log.Printf("Token 获取成功 (长度: %d)", len(accessToken))
-
-	log.Println("连接 IMAP 服务器...")
-	client, err := newIMAPClient()
-	if err != nil {
-		log.Fatalf("连接失败: %v", err)
-	}
-	defer client.close()
-
-	if err := client.authenticate(acc.Email, accessToken); err != nil {
-		log.Fatalf("认证失败: %v", err)
-	}
-
-	total, err := client.selectInbox()
-	if err != nil {
-		log.Fatalf("选择收件箱失败: %v", err)
-	}
-	log.Printf("收件箱共 %d 封邮件", total)
-
-	if err := client.fetchLatestHeaders(total, 5); err != nil {
-		log.Fatalf("获取邮件失败: %v", err)
-	}
-
-	log.Println("IMAP 测试完成")
 }

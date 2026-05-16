@@ -6,18 +6,6 @@ export function AddOutlookAccounts(arg1) {
   return window['go']['main']['App']['AddOutlookAccounts'](arg1);
 }
 
-export function AddProxyManual(arg1) {
-  return window['go']['main']['App']['AddProxyManual'](arg1);
-}
-
-export function BatchDeleteResults(arg1) {
-  return window['go']['main']['App']['BatchDeleteResults'](arg1);
-}
-
-export function BatchTestProxies() {
-  return window['go']['main']['App']['BatchTestProxies']();
-}
-
 export function CancelUpdate() {
   return window['go']['main']['App']['CancelUpdate']();
 }
@@ -26,24 +14,12 @@ export function CheckLicense() {
   return window['go']['main']['App']['CheckLicense']();
 }
 
-export function CheckServerHealth() {
-  return window['go']['main']['App']['CheckServerHealth']();
-}
-
 export function CheckUpdate() {
   return window['go']['main']['App']['CheckUpdate']();
 }
 
-export function ClearKiroResults() {
-  return window['go']['main']['App']['ClearKiroResults']();
-}
-
 export function ClearOutlookAccounts() {
   return window['go']['main']['App']['ClearOutlookAccounts']();
-}
-
-export function ClearProxyPool() {
-  return window['go']['main']['App']['ClearProxyPool']();
 }
 
 export function DeleteOutlookAccount(arg1) {
@@ -52,14 +28,6 @@ export function DeleteOutlookAccount(arg1) {
 
 export function DownloadUpdate() {
   return window['go']['main']['App']['DownloadUpdate']();
-}
-
-export function ExportKiroResults(arg1, arg2) {
-  return window['go']['main']['App']['ExportKiroResults'](arg1, arg2);
-}
-
-export function ExportProxyYAML() {
-  return window['go']['main']['App']['ExportProxyYAML']();
 }
 
 export function GetDataDir() {
@@ -78,10 +46,6 @@ export function GetMoeMailConfigs() {
   return window['go']['main']['App']['GetMoeMailConfigs']();
 }
 
-export function GetMoeMailDomains(arg1) {
-  return window['go']['main']['App']['GetMoeMailDomains'](arg1);
-}
-
 export function GetOutlookAccounts() {
   return window['go']['main']['App']['GetOutlookAccounts']();
 }
@@ -90,16 +54,12 @@ export function GetOverview() {
   return window['go']['main']['App']['GetOverview']();
 }
 
-export function GetProxyPolicy() {
-  return window['go']['main']['App']['GetProxyPolicy']();
+export function GetProxy() {
+  return window['go']['main']['App']['GetProxy']();
 }
 
-export function GetProxyPool() {
-  return window['go']['main']['App']['GetProxyPool']();
-}
-
-export function GetResults(arg1, arg2, arg3) {
-  return window['go']['main']['App']['GetResults'](arg1, arg2, arg3);
+export function GetResultOutputDir() {
+  return window['go']['main']['App']['GetResultOutputDir']();
 }
 
 export function GetStatus() {
@@ -110,48 +70,28 @@ export function GetTaskStatus() {
   return window['go']['main']['App']['GetTaskStatus']();
 }
 
-export function ImportKiroResults() {
-  return window['go']['main']['App']['ImportKiroResults']();
-}
-
 export function ImportOutlookFile(arg1) {
   return window['go']['main']['App']['ImportOutlookFile'](arg1);
-}
-
-export function ImportProxyYAML() {
-  return window['go']['main']['App']['ImportProxyYAML']();
-}
-
-export function ImportProxyYAMLFromURL(arg1) {
-  return window['go']['main']['App']['ImportProxyYAMLFromURL'](arg1);
 }
 
 export function LogoutLicense() {
   return window['go']['main']['App']['LogoutLicense']();
 }
 
-export function ParseOutlook(arg1) {
-  return window['go']['main']['App']['ParseOutlook'](arg1);
-}
-
-export function RemoveProxy(arg1) {
-  return window['go']['main']['App']['RemoveProxy'](arg1);
-}
-
-export function ResetAllProxyStatus() {
-  return window['go']['main']['App']['ResetAllProxyStatus']();
+export function OpenURL(arg1) {
+  return window['go']['main']['App']['OpenURL'](arg1);
 }
 
 export function ResetDataDir() {
   return window['go']['main']['App']['ResetDataDir']();
 }
 
-export function ResetProxyStatus(arg1) {
-  return window['go']['main']['App']['ResetProxyStatus'](arg1);
+export function ResetProxy() {
+  return window['go']['main']['App']['ResetProxy']();
 }
 
-export function RunHealthCheck(arg1) {
-  return window['go']['main']['App']['RunHealthCheck'](arg1);
+export function ResetResultOutputDir() {
+  return window['go']['main']['App']['ResetResultOutputDir']();
 }
 
 export function SaveMoeMailConfigs(arg1) {
@@ -170,8 +110,12 @@ export function SetDataDir(arg1) {
   return window['go']['main']['App']['SetDataDir'](arg1);
 }
 
-export function SetLocalCanvasFingerprint(arg1, arg2) {
-  return window['go']['main']['App']['SetLocalCanvasFingerprint'](arg1, arg2);
+export function SetProxy(arg1) {
+  return window['go']['main']['App']['SetProxy'](arg1);
+}
+
+export function SetResultOutputDir(arg1) {
+  return window['go']['main']['App']['SetResultOutputDir'](arg1);
 }
 
 export function StartTask(arg1) {
@@ -184,26 +128,6 @@ export function StopTask() {
 
 export function TestMoeMailConnection(arg1) {
   return window['go']['main']['App']['TestMoeMailConnection'](arg1);
-}
-
-export function TestPoolProxy(arg1) {
-  return window['go']['main']['App']['TestPoolProxy'](arg1);
-}
-
-export function TestProxy(arg1) {
-  return window['go']['main']['App']['TestProxy'](arg1);
-}
-
-export function UpdateAccountStatus(arg1, arg2, arg3) {
-  return window['go']['main']['App']['UpdateAccountStatus'](arg1, arg2, arg3);
-}
-
-export function UpdateProxyPolicy(arg1) {
-  return window['go']['main']['App']['UpdateProxyPolicy'](arg1);
-}
-
-export function ValidateLicense(arg1) {
-  return window['go']['main']['App']['ValidateLicense'](arg1);
 }
 
 export function VerifyLicense(arg1) {

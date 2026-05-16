@@ -9,9 +9,6 @@ build/appicon.png
 *.dylib
 *.syso
 
-# VMP protection
-vmp/
-
 # Frontend build artifacts
 frontend/dist/
 frontend/node_modules/
@@ -33,6 +30,26 @@ frontend/node_modules/
 Thumbs.db
 desktop.ini
 
-# Temp
+# Temp / logs
 *.tmp
 *.log
+*.log.*
+
+# Data & user config (runtime files, not source)
+*.dat
+results/
+output/
+
+# Wails
+wailsjs/
+
+# Secrets / credentials
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Claude Code local session data
+.claude/

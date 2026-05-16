@@ -103,14 +103,9 @@ func (r *Registrar) Step12SetPassword() error {
 		region = "us-east-1"
 	}
 
-	var encrypted string
-	if r.EncryptJWE != nil {
-		encrypted, err = r.EncryptJWE(r.Cfg.Password, pubKeyMap, issuer, audience, region)
-		if err != nil {
-			return fmt.Errorf("远程 JWE 加密失败: %w", err)
-		}
-	} else {
-		return fmt.Errorf("未配置远程 JWE 加密")
+	encrypted, err := r.JWE.Encrypt(r.Cfg.Password, pubKeyMap, issuer, audience, region)
+	if err != nil {
+		return fmt.Errorf("JWE 加密失败: %w", err)
 	}
 
 	// 12b: 提交密码

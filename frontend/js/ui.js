@@ -136,98 +136,6 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
-// 自动保存
-['cfg-count', 'cfg-concurrency', 'cfg-delay'].forEach(function(id) {
-  var el = document.getElementById(id);
-  if (el) {
-    el.addEventListener('change', function(e) { if(typeof window.saveConfig === 'function') window.saveConfig(e); });
-    el.addEventListener('input', function(e) { if(typeof window.saveConfig === 'function') window.saveConfig(e); });
-  }
-});
-
-// 健康检查配置切换
-document.addEventListener('DOMContentLoaded', function() {
-  var enabledCheckbox = document.getElementById('cfg-health-check-enabled');
-  var optionsDiv = document.getElementById('health-check-options');
-  
-  if (enabledCheckbox && optionsDiv) {
-    // 加载保存的配置
-    var saved = localStorage.getItem('health-check-enabled');
-    if (saved === 'true') {
-      enabledCheckbox.checked = true;
-      optionsDiv.style.display = 'block';
-    }
-    
-    var interval = localStorage.getItem('health-check-interval');
-    if (interval) document.getElementById('cfg-health-check-interval').value = interval;
-    
-    var concurrency = localStorage.getItem('health-check-concurrency');
-    if (concurrency) document.getElementById('cfg-health-check-concurrency').value = concurrency;
-    
-    // 监听开关变化
-    enabledCheckbox.addEventListener('change', function() {
-      optionsDiv.style.display = this.checked ? 'block' : 'none';
-      localStorage.setItem('health-check-enabled', this.checked);
-      if (this.checked) {
-        startHealthCheckTimer();
-      } else {
-        stopHealthCheckTimer();
-      }
-    });
-    
-    // 监听配置变化
-    document.getElementById('cfg-health-check-interval').addEventListener('change', function() {
-      localStorage.setItem('health-check-interval', this.value);
-      if (enabledCheckbox.checked) {
-        stopHealthCheckTimer();
-        startHealthCheckTimer();
-      }
-    });
-    
-    document.getElementById('cfg-health-check-concurrency').addEventListener('change', function() {
-      localStorage.setItem('health-check-concurrency', this.value);
-    });
-    
-    // 启动时如果已启用则开始定时检查
-    if (enabledCheckbox.checked) {
-      startHealthCheckTimer();
-    }
-  }
-});
-
-var healthCheckTimer = null;
-
-function startHealthCheckTimer() {
-  stopHealthCheckTimer();
-  var interval = parseInt(localStorage.getItem('health-check-interval') || '30');
-  healthCheckTimer = setInterval(runHealthCheckNow, interval * 60 * 1000);
-}
-
-function stopHealthCheckTimer() {
-  if (healthCheckTimer) {
-    clearInterval(healthCheckTimer);
-    healthCheckTimer = null;
-  }
-}
-
-async function runHealthCheckNow() {
-  try {
-    var concurrency = parseInt(localStorage.getItem('health-check-concurrency') || '5');
-    var result = await window.go.main.App.RunHealthCheck(concurrency);
-    if (result.error) {
-      console.log('[健康检查] 跳过:', result.error);
-      return;
-    }
-    console.log('[健康检查] 完成: ' + result.total + ' 个账号, ' + result.healthy + ' 正常, ' + result.unhealthy + ' 失效');
-    // 静默刷新账号列表
-    if (typeof fetchResults === 'function') {
-      await fetchResults();
-    }
-  } catch(e) {
-    console.log('[健康检查] 失败:', e.message);
-  }
-}
-
 // 当前选中的邮箱提供商
 var selectedEmailProvider = 'outlook';
 var selectedMoeMailDomains = [];
@@ -291,39 +199,29 @@ async function loadMoeMailDomainsToList() {
     const configs = await window.go.main.App.GetMoeMailConfigs();
 
     if (!configs || configs.length === 0) {
-      listDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:12px;">暂无配置，请先在概览页添加</div>';
+      listDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:12px;">暂无配置，请先在设置页添加</div>';
       return;
     }
 
-    // 加载状态
     let configStatus = {};
     try {
       const saved = localStorage.getItem('moemail-config-status');
-      if (saved) {
-        configStatus = JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error('加载状态失败:', e);
-    }
+      if (saved) configStatus = JSON.parse(saved);
+    } catch (e) {}
 
-    // 收集所有可用配置的域名
     allMoeMailDomains = [];
-    const domainConfigMap = {}; // 域名 -> 配置映射
+    const domainConfigMap = {};
 
     for (const cfg of configs) {
       const status = configStatus[cfg.name];
-      // 只包含测试成功的配置
       if (status && status.tested && status.success && status.domains && status.domains.length > 0) {
         for (const domain of status.domains) {
-          if (!domainConfigMap[domain]) {
-            domainConfigMap[domain] = [];
-          }
+          if (!domainConfigMap[domain]) domainConfigMap[domain] = [];
           domainConfigMap[domain].push(cfg);
         }
       }
     }
 
-    // 转换为数组
     allMoeMailDomains = Object.keys(domainConfigMap).map(domain => ({
       domain: domain,
       configs: domainConfigMap[domain]
@@ -334,44 +232,29 @@ async function loadMoeMailDomainsToList() {
       return;
     }
 
-    // 添加"随机选择"和"全部选择"选项
     let html = `
-      <label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:4px;cursor:pointer;transition:background 0.2s;background:var(--bg-hover);"
-             onmouseover="this.style.background='var(--bg-hover)'"
-             onmouseout="if(!this.querySelector('input').checked)this.style.background='transparent'"
-             onclick="toggleMoeMailDomain('__random__')">
-        <input type="checkbox" name="moemail-domain" value="__random__" checked style="margin:0;">
-        <span style="font-size:12px;font-weight:600;color:var(--primary);">随机选择</span>
-        <span style="font-size:11px;color:var(--text-muted);margin-left:auto;">每次随机一个域名</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:4px;cursor:pointer;transition:background 0.2s;"
-             onmouseover="this.style.background='var(--bg-hover)'"
-             onmouseout="if(!this.querySelector('input').checked)this.style.background='transparent'"
-             onclick="toggleMoeMailDomain('__all__')">
-        <input type="checkbox" name="moemail-domain" value="__all__" style="margin:0;">
-        <span style="font-size:12px;font-weight:600;color:var(--success);">全部选择</span>
-        <span style="font-size:11px;color:var(--text-muted);margin-left:auto;">轮询使用所有域名</span>
-      </label>
+      <div class="domain-mode-row">
+        <div class="domain-mode-btn selected" data-domain="__random__" onclick="toggleMoeMailDomain('__random__')">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+          随机
+        </div>
+        <div class="domain-mode-btn" data-domain="__all__" onclick="toggleMoeMailDomain('__all__')">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+          轮询
+        </div>
+      </div>
+      <div class="domain-chips-wrap">
     `;
 
-    // 添加域名选项
-    html += allMoeMailDomains.map((item, idx) => {
-      return `
-        <label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:4px;cursor:pointer;transition:background 0.2s;"
-               onmouseover="this.style.background='var(--bg-hover)'"
-               onmouseout="if(!this.querySelector('input').checked)this.style.background='transparent'"
-               onclick="toggleMoeMailDomain('${escapeHtml(item.domain)}')">
-          <input type="checkbox" name="moemail-domain" value="${escapeHtml(item.domain)}" style="margin:0;">
-          <span style="font-size:12px;font-weight:500;font-family:var(--font-mono);color:var(--text);">${escapeHtml(item.domain)}</span>
-          <span style="font-size:11px;color:var(--text-muted);margin-left:auto;">${item.configs.length} 个配置</span>
-        </label>
-      `;
+    html += allMoeMailDomains.map((item) => {
+      return `<div class="domain-chip" data-domain="${escapeHtml(item.domain)}" onclick="toggleMoeMailDomain('${escapeHtml(item.domain)}')" title="${item.configs.length} 个配置">${escapeHtml(item.domain)}</div>`;
     }).join('');
 
-    listDiv.innerHTML = html;
+    html += '</div>';
 
-    // 初始化选中状态
+    listDiv.innerHTML = html;
     selectedMoeMailDomains = ['__random__'];
+    updateDomainOptionStyles();
 
   } catch (e) {
     console.error('加载 MoeMail 域名失败:', e);
@@ -379,123 +262,45 @@ async function loadMoeMailDomainsToList() {
   }
 }
 
-// 切换域名选择
-function toggleMoeMailDomain(domain) {
-  const checkbox = document.querySelector(`input[name="moemail-domain"][value="${domain}"]`);
-  if (!checkbox) return;
+// 更新域名选项的视觉状态
+function updateDomainOptionStyles() {
+  document.querySelectorAll('.domain-mode-btn').forEach(el => {
+    const domain = el.getAttribute('data-domain');
+    el.classList.toggle('selected', selectedMoeMailDomains.includes(domain));
+  });
+  document.querySelectorAll('.domain-chip').forEach(el => {
+    const domain = el.getAttribute('data-domain');
+    el.classList.toggle('selected', selectedMoeMailDomains.includes(domain));
+  });
+}
 
-  // 如果点击的是随机选择
-  if (domain === '__random__') {
-    if (checkbox.checked) {
-      // 取消随机选择
-      checkbox.checked = false;
-      selectedMoeMailDomains = selectedMoeMailDomains.filter(d => d !== '__random__');
-    } else {
-      // 选中随机选择，取消其他所有选择
-      document.querySelectorAll('input[name="moemail-domain"]').forEach(cb => {
-        if (cb.value !== '__random__') {
-          cb.checked = false;
-          cb.parentElement.style.background = 'transparent';
-        }
-      });
-      checkbox.checked = true;
-      selectedMoeMailDomains = ['__random__'];
-    }
-  } else if (domain === '__all__') {
-    // 如果点击的是全部选择
-    if (checkbox.checked) {
-      // 取消全部选择
-      checkbox.checked = false;
-      selectedMoeMailDomains = selectedMoeMailDomains.filter(d => d !== '__all__');
-    } else {
-      // 选中全部选择，取消其他所有选择
-      document.querySelectorAll('input[name="moemail-domain"]').forEach(cb => {
-        if (cb.value !== '__all__') {
-          cb.checked = false;
-          cb.parentElement.style.background = 'transparent';
-        }
-      });
-      checkbox.checked = true;
-      selectedMoeMailDomains = ['__all__'];
-    }
-  } else {
-    // 点击具体域名
-    if (checkbox.checked) {
-      // 取消选择
-      checkbox.checked = false;
+// 切换域名选择
+function toggleMoeMailDomain(domain, el) {
+  const isSelected = selectedMoeMailDomains.includes(domain);
+
+  if (domain === '__random__' || domain === '__all__') {
+    if (isSelected) {
       selectedMoeMailDomains = selectedMoeMailDomains.filter(d => d !== domain);
     } else {
-      // 选中该域名，取消随机选择和全部选择
-      const randomCheckbox = document.querySelector('input[name="moemail-domain"][value="__random__"]');
-      const allCheckbox = document.querySelector('input[name="moemail-domain"][value="__all__"]');
-      if (randomCheckbox && randomCheckbox.checked) {
-        randomCheckbox.checked = false;
-        randomCheckbox.parentElement.style.background = 'transparent';
-        selectedMoeMailDomains = selectedMoeMailDomains.filter(d => d !== '__random__');
-      }
-      if (allCheckbox && allCheckbox.checked) {
-        allCheckbox.checked = false;
-        allCheckbox.parentElement.style.background = 'transparent';
-        selectedMoeMailDomains = selectedMoeMailDomains.filter(d => d !== '__all__');
-      }
-      checkbox.checked = true;
+      selectedMoeMailDomains = [domain];
+    }
+  } else {
+    // 点击具体域名：先清除 __random__ 和 __all__
+    selectedMoeMailDomains = selectedMoeMailDomains.filter(d => d !== '__random__' && d !== '__all__');
+    if (isSelected) {
+      selectedMoeMailDomains = selectedMoeMailDomains.filter(d => d !== domain);
+    } else {
       selectedMoeMailDomains.push(domain);
     }
   }
 
-  // 更新背景色
-  document.querySelectorAll('input[name="moemail-domain"]').forEach(cb => {
-    cb.parentElement.style.background = cb.checked ? 'var(--bg-hover)' : 'transparent';
-  });
+  updateDomainOptionStyles();
 }
 
 // 全选域名
 function selectAllMoeMailDomains() {
-  // 取消随机选择和全部选择
-  const randomCheckbox = document.querySelector('input[name="moemail-domain"][value="__random__"]');
-  const allCheckbox = document.querySelector('input[name="moemail-domain"][value="__all__"]');
-  if (randomCheckbox) {
-    randomCheckbox.checked = false;
-    randomCheckbox.parentElement.style.background = 'transparent';
-  }
-  if (allCheckbox) {
-    allCheckbox.checked = false;
-    allCheckbox.parentElement.style.background = 'transparent';
-  }
-
-  // 选中所有具体域名
-  selectedMoeMailDomains = [];
-  document.querySelectorAll('input[name="moemail-domain"]').forEach(cb => {
-    if (cb.value !== '__random__' && cb.value !== '__all__') {
-      cb.checked = true;
-      cb.parentElement.style.background = 'var(--bg-hover)';
-      selectedMoeMailDomains.push(cb.value);
-    }
-  });
-}
-
-// 加载 MoeMail 配置到列表（保留兼容性，已废弃）
-async function loadMoeMailConfigsToList() {
-  console.warn('loadMoeMailConfigsToList is deprecated, use loadMoeMailDomainsToList instead');
-  await loadMoeMailDomainsToList();
-}
-
-// 选择 MoeMail 配置（保留兼容性，已废弃）
-async function selectMoeMailConfig(index) {
-  console.warn('selectMoeMailConfig is deprecated');
-}
-
-// 邮箱提供商切换（保留兼容性）
-function onEmailProviderChange() {
-  const provider = document.getElementById('cfg-email-provider');
-  if (provider) {
-    selectEmailProvider(provider.value);
-  }
-}
-
-// 加载 MoeMail 配置到下拉框（保留兼容性）
-async function loadMoeMailConfigsToSelect() {
-  await loadMoeMailDomainsToList();
+  selectedMoeMailDomains = allMoeMailDomains.map(item => item.domain);
+  updateDomainOptionStyles();
 }
 
 // 关闭任务模态框
@@ -508,9 +313,7 @@ function closeKiroTaskModal() {
   var modalCloseMap = {
     'kiro-task-modal': function() { closeKiroTaskModal(); },
     'outlook-modal': function() { if (typeof closeOutlookModal === 'function') closeOutlookModal(); },
-    'moemail-modal': function() { if (typeof closeMoeMailModal === 'function') closeMoeMailModal(); },
-    'detail-modal': function() { if (typeof closeDetail === 'function') closeDetail(); },
-    'proxy-url-modal': function() { if (typeof closeProxyUrlModal === 'function') closeProxyUrlModal(); }
+    'moemail-modal': function() { if (typeof closeMoeMailModal === 'function') closeMoeMailModal(); }
   };
 
   var mouseDownTarget = null;

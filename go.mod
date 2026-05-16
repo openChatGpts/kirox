@@ -7,11 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/bogdanfinn/fhttp v0.6.8
 	github.com/bogdanfinn/tls-client v1.14.0
-	github.com/fxamacker/cbor/v2 v2.7.0
 	github.com/wailsapp/wails/v2 v2.11.0
-	golang.org/x/crypto v0.46.0
-	golang.org/x/sys v0.39.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -47,7 +43,8 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
-	github.com/x448/float16 v0.8.4 // indirect
+	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 )

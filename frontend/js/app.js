@@ -1,72 +1,7 @@
 // ===== 核心：导航 / 标签页 / 下拉框 / 配置 / 卡密 / Toast / 窗口控制 =====
 
-// ── 本机 Canvas 指纹自动采集（复现 AWS TES app.js 74492-74580）──
-function collectCanvasFingerprint() {
-  try {
-    var c = document.createElement('canvas');
-    c.width = 150; c.height = 60;
-    var t = c.getContext('2d');
-    if (!t) return;
-    t.rect(0,0,10,10); t.rect(2,2,20,20);
-    t.textBaseline = 'alphabetic';
-    t.fillStyle = '#f60'; t.fillRect(95,1,62,30);
-    t.fillStyle = '#069'; t.font = '8pt Arial';
-    t.fillText('Cwm fjordbank glyphs vext quiz,', 2, 15);
-    t.fillStyle = 'rgba(102, 204, 0, 0.2)'; t.font = '11pt Arial';
-    t.fillText('Cwm fjordbank glyphs vext quiz,', 4, 45);
-    t.globalCompositeOperation = 'multiply';
-    t.fillStyle = 'rgb(255,0,255)'; t.beginPath(); t.arc(30,30,30,0,2*Math.PI,true); t.closePath(); t.fill();
-    t.fillStyle = 'rgb(0,255,255)'; t.beginPath(); t.arc(50,30,30,0,2*Math.PI,true); t.closePath(); t.fill();
-    t.fillStyle = 'rgb(255,255,0)'; t.beginPath(); t.arc(35,40,30,0,2*Math.PI,true); t.closePath(); t.fill();
-    t.fillStyle = 'rgb(255,0,255)';
-    t.arc(30,25,10,0,2*Math.PI,true); t.arc(30,25,30,0,2*Math.PI,true); t.fill('evenodd');
-    var a = t.createLinearGradient(40,50,60,62);
-    a.addColorStop(0,'blue'); try{a.addColorStop(0.5,'78');}catch(e){a.addColorStop(0.5,'#808080');} a.addColorStop(1,'white');
-    t.fillStyle = a; t.beginPath(); t.arc(70,50,10,0,2*Math.PI,true); t.closePath(); t.fill();
-    t.font = '10pt dfgstg';
-    t.strokeText(Math.tan(-1e300).toString(), 4, 30);
-    t.fillText(Math.cos(-1e300).toString(), 4, 40);
-    t.fillText(Math.sin(-1e300).toString(), 4, 50);
-    t.beginPath(); t.moveTo(25,0);
-    t.quadraticCurveTo(1,1,1,5); t.quadraticCurveTo(1,76,26,10);
-    t.quadraticCurveTo(26,96,6,12); t.quadraticCurveTo(60,96,41,10);
-    t.quadraticCurveTo(121,86,101,7); t.quadraticCurveTo(121,1,56,1); t.stroke();
-    t.globalCompositeOperation = 'difference';
-    t.fillStyle = 'rgb(255,0,255)'; t.beginPath(); t.arc(80,30,30,0,2*Math.PI,true); t.closePath(); t.fill();
-    t.fillStyle = 'rgb(0,255,255)'; t.beginPath(); t.arc(110,30,30,0,2*Math.PI,true); t.closePath(); t.fill();
-    t.fillStyle = 'rgb(255,255,0)'; t.beginPath(); t.arc(95,40,30,0,2*Math.PI,true); t.closePath(); t.fill();
-    t.fillStyle = 'rgb(255,0,255)';
-    // CRC32 hash
-    var tc2 = document.createElement('canvas'); tc2.width=150; tc2.height=60;
-    var tx = tc2.getContext('2d'); tx.rect(0,0,10,10); tx.rect(2,2,20,20);
-    var ipip = (0 == tx.isPointInPath(5,5,'evenodd')) ? 'yes' : 'no';
-    var hashStr = ipip + '~canvas fp:' + c.toDataURL();
-    var crc = _crc32(hashStr);
-    // histogram
-    var img = t.getImageData(0,0,150,60);
-    var bins = new Array(256); for(var i=0;i<256;i++) bins[i]=0;
-    for(var i=0;i<img.data.length;i++) bins[img.data[i]]++;
-    window.go.main.App.SetLocalCanvasFingerprint(crc, bins).then(function(r){
-      if(r && r.ok) {
-        console.log('[FP] 本机指纹采集成功, hash='+crc);
-        // 显示哈希到设置页面
-        var hashDisplay = document.getElementById('fingerprint-hash-display');
-        if (hashDisplay) {
-          hashDisplay.textContent = crc.toString();
-        }
-      }
-    }).catch(function(e){ console.warn('[FP] 指纹上报失败:', e); });
-  } catch(e) { console.warn('[FP] 指纹采集异常:', e); }
-}
-function _crc32(str) {
-  var tbl = []; for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);tbl[n]=c;}
-  var crc = 0^0xFFFFFFFF;
-  for(var i=0;i<str.length;i++) crc = tbl[(crc^str.charCodeAt(i))&0xFF]^(crc>>>8);
-  return (crc^0xFFFFFFFF)|0;
-}
-
 // 页面切换
-var pageTitles = { overview: '概览', proxy: '代理管理', results: '注册结果', logs: '运行日志', license: '卡密激活', store: '链动小铺', settings: '设置' };
+var pageTitles = { overview: '概览', logs: '运行日志', register: '注册', accounts: '邮箱池', info: '关于', settings: '设置' };
 function switchPage(pageId) {
   document.querySelectorAll('.page, .page-placeholder, .page-iframe').forEach(function(p) {
     p.classList.remove('active');
@@ -77,17 +12,13 @@ function switchPage(pageId) {
     item.classList.toggle('active', item.getAttribute('data-page') === pageId);
   });
   document.getElementById('titlebar-text').textContent = pageTitles[pageId] || pageId;
-  // 概览页面定时刷新
   if (pageId === 'overview') {
     startOverviewTimer();
   } else {
     stopOverviewTimer();
   }
-  if (pageId === 'proxy') {
-    loadProxyPool();
-    loadProxyPolicy();
-  } else {
-    stopProxyRefresh();
+  if (pageId === 'info') {
+    loadInfoVersion();
   }
 }
 
@@ -129,6 +60,49 @@ document.addEventListener('click', function(e) {
   }
 });
 
+async function loadInfoVersion() {
+  try {
+    var data = await window.go.main.App.GetOverview();
+    var ver = (data && data.version) ? data.version : '';
+    if (ver) {
+      ['info-version-detail', 'info-version-detail2'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = ver;
+      });
+    }
+  } catch(e) {}
+
+  // 从 GitHub 加载最新 release 信息
+  var changelogEl = document.getElementById('info-changelog');
+  var latestEl = document.getElementById('info-latest-version');
+  var dateEl = document.getElementById('info-release-date');
+  var tagEl = document.getElementById('info-changelog-version');
+  if (changelogEl) changelogEl.innerHTML = '<span style="color:var(--text-muted);">加载中...</span>';
+  try {
+    var result = await window.go.main.App.CheckUpdate();
+    if (result.error) {
+      if (changelogEl) changelogEl.innerHTML = '<span style="color:var(--text-muted);">加载失败: ' + result.error + '</span>';
+      return;
+    }
+    if (latestEl) {
+      latestEl.textContent = result.latestVersion || '-';
+      latestEl.style.color = result.hasUpdate ? 'var(--success)' : 'var(--text)';
+    }
+    if (dateEl) dateEl.textContent = result.releaseDate || '-';
+    if (tagEl) tagEl.textContent = result.latestVersion || '-';
+    var banner = document.getElementById('info-update-banner');
+    var bannerVer = document.getElementById('info-banner-version');
+    if (banner) banner.style.display = result.hasUpdate ? 'block' : 'none';
+    if (bannerVer) bannerVer.textContent = result.latestVersion || '';
+    if (changelogEl) {
+      var body = (result.changelog || '').trim();
+      changelogEl.innerHTML = body ? renderChangelog(body) : '<span style="color:var(--text-muted);">暂无更新说明</span>';
+    }
+  } catch(e) {
+    if (changelogEl) changelogEl.innerHTML = '<span style="color:var(--text-muted);">加载失败</span>';
+  }
+}
+
 // 存储目录设置
 async function loadDataDir() {
   try {
@@ -167,10 +141,91 @@ async function resetDataDir() {
   }
 }
 
+// 注册结果输出目录设置
+async function loadResultOutputDir() {
+  try {
+    var dir = await window.go.main.App.GetResultOutputDir();
+    var el = document.getElementById('cfg-result-output-dir');
+    if (el) el.value = dir || '';
+  } catch(e) {}
+}
+
+async function selectResultOutputDir() {
+  try {
+    var path = await window.go.main.App.SelectDirectory();
+    if (!path) return;
+    var result = await window.go.main.App.SetResultOutputDir(path);
+    if (result.error) {
+      showToast(result.error, 'error');
+      return;
+    }
+    document.getElementById('cfg-result-output-dir').value = result.path;
+    showToast('注册结果将写入: ' + result.path);
+  } catch(e) {
+    showToast('设置失败: ' + e.message, 'error');
+  }
+}
+
+async function resetResultOutputDir() {
+  try {
+    var result = await window.go.main.App.ResetResultOutputDir();
+    if (result.error) {
+      showToast(result.error, 'error');
+      return;
+    }
+    document.getElementById('cfg-result-output-dir').value = result.path;
+    showToast('已恢复默认输出目录');
+  } catch(e) {
+    showToast('重置失败: ' + e.message, 'error');
+  }
+}
+
+// 代理设置
+async function loadProxy() {
+  try {
+    var p = await window.go.main.App.GetProxy();
+    var el = document.getElementById('cfg-proxy');
+    if (el) el.value = p || '';
+  } catch(e) {}
+}
+
+async function saveProxy() {
+  var el = document.getElementById('cfg-proxy');
+  if (!el) return;
+  try {
+    var result = await window.go.main.App.SetProxy(el.value.trim());
+    if (result.error) {
+      showToast(result.error, 'error');
+      return;
+    }
+    el.value = result.proxy || '';
+    if (result.proxy) {
+      showToast('代理已保存');
+    } else {
+      showToast('已清空代理（直连）');
+    }
+  } catch(e) {
+    showToast('保存失败: ' + e.message, 'error');
+  }
+}
+
+async function resetProxy() {
+  try {
+    await window.go.main.App.ResetProxy();
+    var el = document.getElementById('cfg-proxy');
+    if (el) el.value = '';
+    showToast('已清空代理（直连）');
+  } catch(e) {
+    showToast('清空失败: ' + e.message, 'error');
+  }
+}
+
 // UI 状态
 function updateUIStatus(running) {
-  document.getElementById('btn-start').disabled = running;
-  document.getElementById('btn-stop').disabled = !running;
+  var btnStart = document.getElementById('btn-start');
+  var btnStop = document.getElementById('btn-stop');
+  if (btnStart) btnStart.disabled = running;
+  if (btnStop) btnStop.disabled = !running;
 }
 
 // 配置读写
@@ -252,7 +307,6 @@ async function loadConfig() {
   console.log('[启动] 开始初始化...');
   
   // 默认禁用所有功能，等待卡密验证
-  disableAllFeatures();
   
   let retries = 0;
   while ((!window.go || !window.go.main || !window.go.main.App) && retries < 100) {
@@ -266,10 +320,7 @@ async function loadConfig() {
     return;
   }
   console.log('[启动] Wails runtime 已就绪');
-  
-  // 启动时自动采集本机 canvas 指纹
-  collectCanvasFingerprint();
-  
+
   // 直接显示主界面
   console.log('[启动] 显示主界面');
   const mainContainer = document.getElementById('main-container');
@@ -293,98 +344,6 @@ async function loadConfig() {
     console.error('[启动] 找不到 main-container 元素');
   }
   
-  // 检查卡密状态
-  try {
-    console.log('[启动] 检查卡密状态...');
-    const licenseResult = await window.go.main.App.CheckLicense();
-    console.log('[启动] 卡密检查结果:', licenseResult);
-    
-    const daysLeft = document.getElementById('license-days-left');
-    const licenseInput = document.getElementById('license-key-input-page');
-    const actionButtons = document.getElementById('license-action-buttons');
-    const logoutBtn = document.getElementById('license-logout-btn');
-    
-    if (!licenseResult.valid) {
-      // 未激活：输入框可编辑，显示激活按钮
-      if (daysLeft) daysLeft.textContent = '-';
-      if (licenseInput) {
-        licenseInput.readOnly = false;
-        licenseInput.value = '';
-      }
-      if (actionButtons) actionButtons.style.display = 'flex';
-      if (logoutBtn) logoutBtn.style.display = 'none';
-      // 禁用所有功能
-      disableAllFeatures();
-    } else {
-      // 已激活：输入框只读，显示退出按钮
-      if (actionButtons) actionButtons.style.display = 'none';
-      if (logoutBtn) logoutBtn.style.display = 'block';
-      // 启用所有功能
-      enableAllFeatures();
-      // 获取并显示卡密信息
-      try {
-        const licenseInfo = await window.go.main.App.GetLicenseInfo();
-        if (licenseInfo && licenseInfo.key) {
-          // 输入框显示卡密并设为只读
-          if (licenseInput) {
-            licenseInput.value = licenseInfo.key;
-            licenseInput.readOnly = true;
-          }
-          
-          // 显示订阅类型
-          const typeEl = document.getElementById('license-type');
-          if (typeEl && licenseInfo.type) {
-            typeEl.textContent = licenseInfo.type;
-          }
-          
-          // 显示到期时间
-          const expireEl = document.getElementById('license-expire');
-          if (expireEl && licenseInfo.expire_at) {
-            expireEl.textContent = licenseInfo.expire_at;
-            
-            // 计算剩余时间（精确到秒）
-            try {
-              const expireDate = new Date(licenseInfo.expire_at);
-              const now = new Date();
-              const diffTime = expireDate - now;
-              if (daysLeft && diffTime > 0) {
-                const days = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                const hours = Math.floor((diffTime % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                const minutes = Math.floor((diffTime % (1000 * 60 * 60)) / (1000 * 60));
-                const seconds = Math.floor((diffTime % (1000 * 60)) / 1000);
-                daysLeft.textContent = days + '天 ' + hours + '时 ' + minutes + '分 ' + seconds + '秒';
-                
-                // 启动倒计时更新
-                startLicenseCountdown(expireDate);
-              } else if (daysLeft) {
-                daysLeft.textContent = '已过期';
-              }
-            } catch (e) {
-              console.error('[启动] 计算剩余时间失败:', e);
-            }
-          }
-        }
-      } catch (e) {
-        console.error('[启动] 获取卡密信息失败:', e);
-      }
-    }
-  } catch (e) {
-    console.error('[启动] 检查卡密失败:', e);
-    // 显示未激活状态
-    const daysLeft = document.getElementById('license-days-left');
-    const licenseInput = document.getElementById('license-key-input-page');
-    const actionButtons = document.getElementById('license-action-buttons');
-    const logoutBtn = document.getElementById('license-logout-btn');
-    if (daysLeft) daysLeft.textContent = '-';
-    if (licenseInput) {
-      licenseInput.readOnly = false;
-      licenseInput.value = '';
-    }
-    if (actionButtons) actionButtons.style.display = 'flex';
-    if (logoutBtn) logoutBtn.style.display = 'none';
-    disableAllFeatures();
-  }
-  
   try {
     var savedConfig = localStorage.getItem('kiro-config');
     if (savedConfig) {
@@ -396,19 +355,91 @@ async function loadConfig() {
   } catch(e) {
     console.error('[启动] 加载配置失败:', e);
   }
-  loadHealthCheckStatus();
   loadOutlookAccountsList();
   loadDataDir();
+  loadResultOutputDir();
+  loadProxy();
   startOverviewTimer();
-  loadProxyPool();
-  loadProxyPolicy();
   console.log('[启动] 初始化完成');
 }
 
 // 页面加载时自动初始化
 window.addEventListener('DOMContentLoaded', async function() {
   await loadConfig();
-  // 初始化邮箱提供商选择
   initEmailProviderSelection();
+  // 启动时静默检查更新
+  setTimeout(checkUpdateOnStartup, 2000);
 });
+
+async function checkUpdateOnStartup() {
+  try {
+    var result = await window.go.main.App.CheckUpdate();
+    if (result && result.hasUpdate) {
+      if (typeof showUpdateModal === 'function') showUpdateModal(result);
+    }
+  } catch(e) {}
+}
+
+// 侧边栏信息按钮：10次点击触发调试弹窗
+var _infoClickCount = 0;
+var _infoClickTimer = null;
+function onNavInfoClick() {
+  switchPage('info');
+  _infoClickCount++;
+  clearTimeout(_infoClickTimer);
+  _infoClickTimer = setTimeout(function() { _infoClickCount = 0; }, 2000);
+  if (_infoClickCount >= 10) {
+    _infoClickCount = 0;
+    if (typeof showUpdateModal === 'function') {
+      showUpdateModal({
+        currentVersion: 'v1.0.1',
+        latestVersion: 'v99.0.0',
+        releaseDate: new Date().toISOString().slice(0, 10),
+        changelog: '## 调试模式\n- 这是一条测试更新弹窗\n- 触发方式：点击信息按钮 10 次',
+        hasUpdate: true
+      });
+    }
+  }
+}
+
+function renderChangelog(md) {
+  var esc = function(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  };
+  var inline = function(s) {
+    return esc(s)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`(.+?)`/g, '<code style="background:var(--bg-subtle);padding:1px 5px;border-radius:4px;font-family:var(--font-mono);font-size:12px;">$1</code>');
+  };
+
+  var lines = md.split('\n');
+  var html = '';
+  var inList = false;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var h2 = line.match(/^##\s+(.+)/);
+    var h3 = line.match(/^###\s+(.+)/);
+    var li = line.match(/^[-*]\s+(.+)/);
+    var blank = line.trim() === '';
+
+    if (h2) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += '<div class="cl-h2">' + inline(h2[1]) + '</div>';
+    } else if (h3) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += '<div class="cl-h3">' + inline(h3[1]) + '</div>';
+    } else if (li) {
+      if (!inList) { html += '<ul class="cl-list">'; inList = true; }
+      html += '<li>' + inline(li[1]) + '</li>';
+    } else if (blank) {
+      if (inList) { html += '</ul>'; inList = false; }
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += '<p class="cl-p">' + inline(line) + '</p>';
+    }
+  }
+  if (inList) html += '</ul>';
+  return html;
+}
 

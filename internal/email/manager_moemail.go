@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"reg_go/internal/crypto"
 	"reg_go/internal/storage"
 )
 
@@ -23,15 +22,10 @@ func GetMoeMailConfigs() []MoeMailConfig {
 		return []MoeMailConfig{}
 	}
 
-	decrypted, err := crypto.DecryptLocal(string(data))
-	if err != nil {
-		log.Printf("[MoeMail] 解密配置失败: %v", err)
-		return []MoeMailConfig{}
-	}
-
 	var configs []MoeMailConfig
-	if err := json.Unmarshal([]byte(decrypted), &configs); err != nil {
-		log.Printf("[MoeMail] 解析配置失败: %v", err)
+	if err := json.Unmarshal(data, &configs); err != nil {
+		log.Printf("[MoeMail] 配置文件格式无效，已重置: %v", err)
+		os.Remove(getMoeMailConfigPath())
 		return []MoeMailConfig{}
 	}
 
@@ -58,15 +52,9 @@ func SaveMoeMailConfigs(configsJSON string) map[string]interface{} {
 		}
 	}
 
-	// 加密保存
 	jsonData, _ := json.Marshal(configs)
-	encrypted, err := crypto.EncryptLocal(string(jsonData))
-	if err != nil {
-		return map[string]interface{}{"error": "加密失败: " + err.Error()}
-	}
-
 	os.MkdirAll(filepath.Dir(getMoeMailConfigPath()), 0755)
-	if err := os.WriteFile(getMoeMailConfigPath(), []byte(encrypted), 0600); err != nil {
+	if err := os.WriteFile(getMoeMailConfigPath(), jsonData, 0600); err != nil {
 		return map[string]interface{}{"error": "保存失败: " + err.Error()}
 	}
 
@@ -82,19 +70,15 @@ func TestMoeMailConnection(configJSON string) map[string]interface{} {
 	}
 
 	client := NewMoeMailClient(config)
-	if err := client.TestConnection(); err != nil {
+	sysConfig, err := client.GetSystemConfig()
+	if err != nil {
 		return map[string]interface{}{"error": "连接失败: " + err.Error()}
 	}
 
-	// 获取系统配置以验证 API Key 有效性
-	sysConfig, err := client.GetSystemConfig()
-	if err != nil {
-		return map[string]interface{}{"error": "获取系统配置失败: " + err.Error()}
-	}
-
 	return map[string]interface{}{
-		"success": true,
-		"domains": sysConfig.Domains,
+		"success":     true,
+		"domains":     sysConfig.Domains,
+		"domainCount": len(sysConfig.Domains),
 	}
 }
 

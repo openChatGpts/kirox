@@ -26,8 +26,8 @@ type MoeMailClient struct {
 
 // MoeMailSystemConfig 系统配置响应
 type MoeMailSystemConfig struct {
-	Domains      []string `json:"domains"`      // 可用域名列表（数组格式）
-	EmailDomains string   `json:"emailDomains"` // 可用域名（字符串格式，逗号分隔）
+	EmailDomains string `json:"emailDomains"` // 可用域名（逗号分隔字符串）
+	Domains      []string                      // 解析后的域名列表（不参与 JSON）
 }
 
 // MoeMailEmail 邮箱信息
@@ -50,12 +50,6 @@ type MoeMailMessage struct {
 	Content     string `json:"content"` // 纯文本内容
 	HTML        string `json:"html"`
 	CreatedAt   string `json:"createdAt"`
-}
-
-// MoeMailEmailsResponse 邮箱列表响应
-type MoeMailEmailsResponse struct {
-	Emails     []MoeMailEmail `json:"emails"`
-	NextCursor string         `json:"nextCursor"`
 }
 
 // MoeMailMessagesResponse 邮件列表响应
@@ -111,16 +105,18 @@ func (c *MoeMailClient) GetSystemConfig() (*MoeMailSystemConfig, error) {
 		return nil, fmt.Errorf("解析响应失败: %w, 响应内容: %s", err, string(body))
 	}
 
-	// 如果 Domains 为空但 EmailDomains 不为空，解析 EmailDomains
-	if len(config.Domains) == 0 && config.EmailDomains != "" {
-		// 按逗号分隔域名
-		domains := strings.Split(config.EmailDomains, ",")
-		for _, domain := range domains {
+	// 从 emailDomains 字符串解析域名列表
+	if config.EmailDomains != "" {
+		for _, domain := range strings.Split(config.EmailDomains, ",") {
 			domain = strings.TrimSpace(domain)
 			if domain != "" {
 				config.Domains = append(config.Domains, domain)
 			}
 		}
+	}
+
+	if len(config.Domains) == 0 {
+		return nil, fmt.Errorf("API 未返回可用域名")
 	}
 
 	return &config, nil
@@ -159,32 +155,6 @@ func (c *MoeMailClient) GenerateEmail(name string, expiryTime int64, domain stri
 	return &email, nil
 }
 
-// GetEmails 获取邮箱列表
-func (c *MoeMailClient) GetEmails(cursor string) (*MoeMailEmailsResponse, error) {
-	path := "/api/emails"
-	if cursor != "" {
-		path += "?cursor=" + cursor
-	}
-
-	resp, err := c.request("GET", path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("获取邮箱列表失败 %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result MoeMailEmailsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-
-	return &result, nil
-}
-
 // GetMessages 获取邮件列表
 func (c *MoeMailClient) GetMessages(emailID, cursor string) (*MoeMailMessagesResponse, error) {
 	path := fmt.Sprintf("/api/emails/%s", emailID)
@@ -211,30 +181,7 @@ func (c *MoeMailClient) GetMessages(emailID, cursor string) (*MoeMailMessagesRes
 	return &result, nil
 }
 
-// GetMessage 获取单封邮件
-func (c *MoeMailClient) GetMessage(emailID, messageID string) (*MoeMailMessage, error) {
-	path := fmt.Sprintf("/api/emails/%s/messages/%s", emailID, messageID)
-
-	resp, err := c.request("GET", path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("获取邮件失败 %d: %s", resp.StatusCode, string(body))
-	}
-
-	var message MoeMailMessage
-	if err := json.NewDecoder(resp.Body).Decode(&message); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
-	}
-
-	return &message, nil
-}
-
-// TestConnection 测试连接
+// TestConnection 测试连接（通过获取系统配置验证）
 func (c *MoeMailClient) TestConnection() error {
 	_, err := c.GetSystemConfig()
 	return err
@@ -402,13 +349,4 @@ func extractCodeFromText(text string, regex *regexp.Regexp) string {
 		return matches[1]
 	}
 	return ""
-}
-
-// ParseMoeMailConfigs 从 JSON 字符串解析 MoeMail 配置列表
-func ParseMoeMailConfigs(jsonStr string) ([]MoeMailConfig, error) {
-	var configs []MoeMailConfig
-	if err := json.Unmarshal([]byte(jsonStr), &configs); err != nil {
-		return nil, fmt.Errorf("解析配置失败: %w", err)
-	}
-	return configs, nil
 }

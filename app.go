@@ -5,25 +5,16 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"log"
 	"os"
-	"path/filepath"
-	"reg_go/internal/data"
 	"reg_go/internal/email"
 
-	"reg_go/internal/license"
-	"reg_go/internal/network"
-	"reg_go/internal/security"
 	"reg_go/internal/storage"
 	"reg_go/internal/task"
 	"reg_go/internal/updater"
-	"sync/atomic"
 	"time"
 )
 
 type App struct {
 	ctx context.Context
-
-	// 无锁运行状态标记（供 logWriter 使用，避免与 log.mutex 死锁）
-	kiroRunning atomic.Bool
 }
 
 // NewApp 创建新的 App 实例
@@ -46,16 +37,16 @@ func (a *App) startup(ctx context.Context) {
 
 	// 清理上次更新可能遗留的临时文件
 	go updater.CleanupTemp()
-
-	// 不在启动时检查更新，只在卡密验证通过后检查
-	security.AntiDebugCallback = func() {
-		license.DeleteFromRegistry()
-	}
 }
 
 // shutdown 在应用关闭时调用
 func (a *App) shutdown(ctx context.Context) {
 	storage.FlushAccountsSync()
+}
+
+// OpenURL 在系统默认浏览器中打开 URL
+func (a *App) OpenURL(url string) {
+	runtime.BrowserOpenURL(a.ctx, url)
 }
 
 // logWriter 自定义日志写入器，根据运行状态路由日志
@@ -69,12 +60,6 @@ func (w *logWriter) Write(p []byte) (int, error) {
 	return os.Stderr.Write(p)
 }
 
-// SetLocalCanvasFingerprint 接收前端 WebView2 采集的本机 canvas 指纹
-// 新版本使用纯算法生成指纹，此方法保留向后兼容但不再实际使用
-func (a *App) SetLocalCanvasFingerprint(hash int, bins []int) map[string]interface{} {
-	return map[string]interface{}{"ok": true}
-}
-
 // GetStatus 获取任务状态
 func (a *App) GetStatus() map[string]interface{} {
 	return task.Manager.GetStatus()
@@ -85,62 +70,22 @@ func (a *App) GetLogs() []string {
 	return task.Manager.GetLogs()
 }
 
-// --- UI 绑定接口 (Bindings) ---
-// --- bindings_data.go ---
-
-// ExportKiroResults 导出 Kiro 注册结果
-func (a *App) ExportKiroResults(format string, selectedEmails []string) map[string]interface{} {
-	return data.ExportKiroResults(a.ctx, format, selectedEmails)
-}
-
-// ImportKiroResults 导入 Kiro 注册结果
-func (a *App) ImportKiroResults() map[string]interface{} {
-	return data.ImportKiroResults(a.ctx)
-}
-
-// BatchDeleteResults 批量删除注册结果
-func (a *App) BatchDeleteResults(emails []string) map[string]interface{} {
-	return data.BatchDeleteResults(emails)
-}
-
-// ClearKiroResults 一键清空所有 Kiro 注册结果
-func (a *App) ClearKiroResults() map[string]interface{} {
-	return data.ClearKiroResults()
-}
-
-// GetResults 获取结果列表
-func (a *App) GetResults(page int, pageSize int, filter string) map[string]interface{} {
-	return data.GetResults(page, pageSize, filter)
-}
-
 // GetOverview 获取全局概览数据
 func (a *App) GetOverview() map[string]interface{} {
-	// Kiro 注册结果统计
-	kiroTotal, kiroSuccess, kiroFailed, kiroBanned := countKiroResults()
-
 	// Outlook 账号统计
 	outlookTotal, outlookRegistered, outlookSuccess, outlookPending := countOutlookAccounts()
 
 	// 当前任务状态
 	taskStatus := task.Manager.GetStatus()
-	kiroRunning := taskStatus["running"]
-	kiroTaskSuccess := taskStatus["success"]
-	kiroTaskFailed := taskStatus["failed"]
-	kiroTaskCompleted := taskStatus["completed"]
-	kiroTaskTotal := taskStatus["total"]
 
 	return map[string]interface{}{
 		"version": updater.GetCurrentVersion(),
 		"kiro": map[string]interface{}{
-			"totalAccounts":   kiroTotal,
-			"successAccounts": kiroSuccess,
-			"failedAccounts":  kiroFailed,
-			"bannedAccounts":  kiroBanned,
-			"taskRunning":     kiroRunning,
-			"taskSuccess":     kiroTaskSuccess,
-			"taskFailed":      kiroTaskFailed,
-			"taskCompleted":   kiroTaskCompleted,
-			"taskTotal":       kiroTaskTotal,
+			"taskRunning":   taskStatus["running"],
+			"taskSuccess":   taskStatus["success"],
+			"taskFailed":    taskStatus["failed"],
+			"taskCompleted": taskStatus["completed"],
+			"taskTotal":     taskStatus["total"],
 		},
 		"outlook": map[string]interface{}{
 			"total":      outlookTotal,
@@ -165,24 +110,6 @@ func (a *App) GetTaskStatus() map[string]interface{} {
 	}
 }
 
-// countKiroResults 统计 Kiro 注册结果
-func countKiroResults() (total, success, failed, banned int) {
-	kiroDir := storage.GetKiroDir()
-
-	success = storage.CountEncryptedJSON(filepath.Join(kiroDir, "results.dat"))
-	total += success
-
-	failedCount := storage.CountEncryptedJSON(filepath.Join(kiroDir, "failed.dat"))
-	failed += failedCount
-	total += failedCount
-
-	bannedCount := storage.CountEncryptedJSON(filepath.Join(kiroDir, "banned.dat"))
-	banned += bannedCount
-	total += bannedCount
-
-	return
-}
-
 // countOutlookAccounts 统计 Outlook 账号
 func countOutlookAccounts() (total, registered, success, pending int) {
 	accounts := storage.GetAccountsCached()
@@ -205,46 +132,25 @@ func countOutlookAccounts() (total, registered, success, pending int) {
 	return
 }
 
-// RunHealthCheck 运行账号健康检查
-func (a *App) RunHealthCheck(concurrency int) map[string]interface{} {
-	return data.RunHealthCheck(concurrency)
-}
-
-
-
-// --- bindings_license.go ---
-
-// CheckServerHealth 检查验证服务器连通性和延迟
-func (a *App) CheckServerHealth() map[string]interface{} {
-	return license.Manager.CheckServerHealth()
-}
-
 // VerifyLicense 验证卡密
 func (a *App) VerifyLicense(licenseKey string) map[string]interface{} {
-	return license.Manager.VerifyLicense(licenseKey)
-}
-
-// ValidateLicense 仅验证卡密（不消耗设备名额）
-func (a *App) ValidateLicense(licenseKey string) map[string]interface{} {
-	return license.Manager.ValidateLicense(licenseKey)
+	return map[string]interface{}{"success": true}
 }
 
 // CheckLicense 检查本地卡密
 func (a *App) CheckLicense() map[string]interface{} {
-	return license.Manager.CheckLicense()
+	return map[string]interface{}{"valid": true}
 }
 
 // GetLicenseInfo 获取卡密详细信息
 func (a *App) GetLicenseInfo() map[string]interface{} {
-	return license.Manager.GetLicenseInfo()
+	return map[string]interface{}{"success": true, "key": ""}
 }
 
-// LogoutLicense 退出卡密（调用服务器自助解绑）
+// LogoutLicense 退出卡密
 func (a *App) LogoutLicense() map[string]interface{} {
-	return license.Manager.LogoutLicense()
+	return map[string]interface{}{"success": true, "message": "已退出"}
 }
-
-// --- bindings_mail.go ---
 
 // ---- MoeMail ----
 
@@ -260,15 +166,7 @@ func (a *App) TestMoeMailConnection(configJSON string) map[string]interface{} {
 	return email.TestMoeMailConnection(configJSON)
 }
 
-func (a *App) GetMoeMailDomains(configJSON string) map[string]interface{} {
-	return email.GetMoeMailDomains(configJSON)
-}
-
 // ---- Outlook ----
-
-func (a *App) ParseOutlook(data string) map[string]interface{} {
-	return email.ParseOutlook(data)
-}
 
 func (a *App) AddOutlookAccounts(data string) map[string]interface{} {
 	return email.AddOutlookAccounts(data)
@@ -276,10 +174,6 @@ func (a *App) AddOutlookAccounts(data string) map[string]interface{} {
 
 func (a *App) GetOutlookAccounts() []map[string]interface{} {
 	return email.GetOutlookAccounts()
-}
-
-func (a *App) UpdateAccountStatus(em string, registered bool, success bool) map[string]interface{} {
-	return email.UpdateAccountStatus(em, registered, success)
 }
 
 func (a *App) DeleteOutlookAccount(em string) map[string]interface{} {
@@ -334,15 +228,6 @@ func (a *App) SelectOutlookFile() string {
 	return path
 }
 
-// --- bindings_network.go ---
-
-// TestProxy 测试代理连通性和延迟
-func (a *App) TestProxy(proxyStr string) map[string]interface{} {
-	return network.TestProxy(proxyStr)
-}
-
-// --- bindings_storage.go ---
-
 // GetDataDir 前端获取当前存储目录
 func (a *App) GetDataDir() string {
 	return storage.GetDataDir()
@@ -363,7 +248,45 @@ func (a *App) ResetDataDir() map[string]interface{} {
 	return map[string]interface{}{"success": true, "path": path}
 }
 
-// --- bindings_task.go ---
+// GetResultOutputDir 获取注册结果输出目录（明文 accounts.json 的写入位置）
+func (a *App) GetResultOutputDir() string {
+	return storage.GetResultOutputDir()
+}
+
+// SetResultOutputDir 设置注册结果输出目录
+func (a *App) SetResultOutputDir(dir string) map[string]interface{} {
+	path, err := storage.SetResultOutputDir(dir)
+	if err != nil {
+		return map[string]interface{}{"error": err.Error()}
+	}
+	return map[string]interface{}{"success": true, "path": path}
+}
+
+// ResetResultOutputDir 重置为默认输出目录
+func (a *App) ResetResultOutputDir() map[string]interface{} {
+	path := storage.ResetResultOutputDir()
+	return map[string]interface{}{"success": true, "path": path}
+}
+
+// GetProxy 返回当前全局代理（空字符串=直连）
+func (a *App) GetProxy() string {
+	return storage.GetProxy()
+}
+
+// SetProxy 保存全局代理；输入的简写（host:port:user:pass 等）会被自动归一化
+func (a *App) SetProxy(raw string) map[string]interface{} {
+	normalized, err := storage.SetProxy(raw)
+	if err != nil {
+		return map[string]interface{}{"error": err.Error()}
+	}
+	return map[string]interface{}{"success": true, "proxy": normalized}
+}
+
+// ResetProxy 清空代理，恢复直连
+func (a *App) ResetProxy() map[string]interface{} {
+	storage.ResetProxy()
+	return map[string]interface{}{"success": true}
+}
 
 // StartTask 启动注册任务
 func (a *App) StartTask(req task.StartTaskRequest) map[string]interface{} {
@@ -374,8 +297,6 @@ func (a *App) StartTask(req task.StartTaskRequest) map[string]interface{} {
 func (a *App) StopTask() map[string]interface{} {
 	return task.StopTask(true)
 }
-
-// --- bindings_updater.go ---
 
 // CheckUpdate 手动检查更新
 func (a *App) CheckUpdate() map[string]interface{} {

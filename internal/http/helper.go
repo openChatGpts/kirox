@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"net/url"
 	"strings"
-	"time"
 
 	fhttp "github.com/bogdanfinn/fhttp"
 	tls_client "github.com/bogdanfinn/tls-client"
@@ -28,12 +27,6 @@ func Hex4() string {
 		b[i] = chars[rand.Intn(16)]
 	}
 	return string(b)
-}
-
-// VisitorID 生成随机 visitor ID
-func VisitorID() string {
-	return fmt.Sprintf("%s%s-%s-7%s-%s-%s%s%s",
-		Hex4(), Hex4(), Hex4(), Hex4()[1:], Hex4(), Hex4(), Hex4(), Hex4())
 }
 
 // Awsccc 生成 awsccc cookie 值
@@ -61,14 +54,10 @@ func UbidGen() string {
 	return fmt.Sprintf("186-%s-%s", string(d7), string(d6))
 }
 
-// KiroVisitorID 生成 Kiro visitor ID
-func KiroVisitorID() string {
-	const chars = "0123456789abcdefghijklmnopqrstuvwxyz"
-	b := make([]byte, 11)
-	for i := range b {
-		b[i] = chars[rand.Intn(len(chars))]
-	}
-	return fmt.Sprintf("%d-%s", time.Now().UnixMilli(), string(b))
+// VisitorID 生成随机 visitor ID
+func VisitorID() string {
+	return fmt.Sprintf("%s%s-%s-7%s-%s-%s%s%s",
+		Hex4(), Hex4(), Hex4(), Hex4()[1:], Hex4(), Hex4(), Hex4(), Hex4())
 }
 
 // PKCE 生成 PKCE code_verifier 和 code_challenge

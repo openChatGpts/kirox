@@ -296,57 +296,394 @@ tbody td a:hover {
 }
 
 [data-theme="dark"] .log-box {
-  background: #0a0a0f;
-  border-color: rgba(255,255,255,0.04);
-  color: rgba(180,230,180,0.7);
+  background: #080a0f;
+  border-color: rgba(255,255,255,0.05);
+  color: rgba(226, 232, 240, 0.85);
 }
 
-/* ===== Proxy Badges ===== */
-.proxy-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  background: var(--bg-subtle);
-  color: var(--text-muted);
-}
-.proxy-badge-active { background: rgba(16,185,129,0.12); color: #10b981; }
-.proxy-badge-cooldown { background: rgba(245,158,11,0.12); color: #f59e0b; }
-.proxy-badge-black { background: rgba(239,68,68,0.12); color: #ef4444; }
-.proxy-badge-res { background: rgba(59,130,246,0.12); color: #3b82f6; }
-.proxy-badge-dc { background: rgba(139,92,246,0.12); color: #8b5cf6; }
-.proxy-num-green { color: #10b981; font-weight: 600; font-size: 12px; }
-.proxy-num-red { color: #ef4444; font-weight: 600; font-size: 12px; }
+/* Proxy 相关样式已移除（代理管理功能下线） */
 
-/* ===== Proxy Address Tooltip ===== */
-.proxy-addr-cell {
-  position: relative;
-}
-.proxy-addr-cell:hover .addr-tooltip {
-  display: block;
-}
-.addr-tooltip {
-  display: none;
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 6px;
-  background: #1f2937;
-  color: #fff;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 500;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-width: 380px;
-  line-height: 1.4;
-  pointer-events: none;
-  z-index: 300;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
 [data-theme="dark"] .addr-tooltip {
   background: #374151;
+}
+
+/* ===== MoeMail 配置卡片样式 ===== */
+.moemail-add-section {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+
+.moemail-add-section:hover {
+  border-color: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.05);
+}
+
+.moemail-add-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.moemail-add-header svg {
+  color: #10b981;
+}
+
+.moemail-add-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.moemail-input-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.moemail-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.moemail-input-group label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.moemail-input-group .form-input {
+  height: 36px;
+  font-size: 13px;
+}
+
+.moemail-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.moemail-action-row .btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.moemail-status-text {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 4px;
+  line-height: 1.4;
+  flex: 1;
+}
+
+/* 配置列表 */
+.moemail-config-list {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.moemail-config-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.moemail-config-item:hover {
+  background: var(--bg-card);
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.moemail-config-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.moemail-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.05);
+}
+
+.moemail-status-dot.success {
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.moemail-status-dot.error {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.moemail-status-dot.untested {
+  background: var(--text-muted);
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.05);
+}
+
+.moemail-config-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.moemail-config-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.moemail-config-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.moemail-config-url {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+.moemail-config-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--bg);
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.moemail-config-status.success {
+  color: #10b981;
+}
+
+.moemail-config-status.error {
+  color: #ef4444;
+}
+
+.moemail-config-status.untested {
+  color: var(--text-muted);
+}
+
+.moemail-config-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.moemail-config-actions .btn {
+  font-size: 11px;
+  padding: 6px 12px;
+  height: auto;
+}
+
+/* 空状态 */
+.moemail-empty-state {
+  text-align: center;
+  padding: 32px 20px;
+  color: var(--text-muted);
+  font-size: 12px;
+  background: var(--bg-subtle);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  margin-top: 16px;
+}
+
+.moemail-empty-state svg {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 12px;
+  opacity: 0.3;
+}
+
+/* 域名 tag */
+.moemail-domain-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.moemail-domain-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 5px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .moemail-domain-tag {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+/* 域名选择容器 */
+.moemail-domains-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+/* 全选按钮 */
+.moemail-select-all-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.moemail-select-all-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+/* 模式选择行 */
+.domain-mode-row {
+  display: flex;
+  gap: 6px;
+}
+
+.domain-mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 0;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.domain-mode-btn:hover {
+  border-color: var(--text-muted);
+  color: var(--text-secondary);
+}
+
+.domain-mode-btn.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.07);
+  color: #3b82f6;
+}
+
+.domain-mode-btn svg {
+  opacity: 0.6;
+}
+
+.domain-mode-btn.selected svg {
+  opacity: 1;
+}
+
+/* 域名 chip 流式布局 */
+.domain-chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.domain-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.domain-chip:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.domain-chip.selected {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+  font-weight: 600;
+}
+
+/* 暗色适配 */
+[data-theme="dark"] .domain-mode-btn.selected {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+[data-theme="dark"] .domain-chip.selected {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* 暗色主题适配 */
+[data-theme="dark"] .moemail-add-section:hover {
+  border-color: rgba(16, 185, 129, 0.4);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.08);
+}
+
+[data-theme="dark"] .moemail-config-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }

@@ -2,118 +2,39 @@ package task
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"reg_go/internal/core"
-	"reg_go/internal/crypto"
 	"reg_go/internal/data"
 	"reg_go/internal/email"
-	"reg_go/internal/license"
-	"reg_go/internal/network"
-	"reg_go/internal/proxy"
-	"reg_go/internal/security"
 	"reg_go/internal/storage"
 )
 
 // StartTaskRequest 启动任务请求
 type StartTaskRequest struct {
-	Count              int                                `json:"count"`
-	Concurrency        int                                `json:"concurrency"`
-	Delay              int                                `json:"delay"`
-	Proxy              string                             `json:"proxy"`
-	OutputPath         string                             `json:"outputPath"`
-	EmailProvider      string                             `json:"emailProvider"`      // "outlook" 或 "moemail"
-	MoeMailDomains     []string                           `json:"moemailDomains"`     // 选中的域名列表
-	MoeMailConfigs     map[string][]email.MoeMailConfig   `json:"moemailConfigs"`     // 域名 -> 配置列表映射
-	MoeMailRandomMode  bool                               `json:"moemailRandomMode"`  // 是否为随机模式
+	Count             int                              `json:"count"`
+	Concurrency       int                              `json:"concurrency"`
+	Delay             int                              `json:"delay"`
+	OutputPath        string                           `json:"outputPath"`
+	EmailProvider     string                           `json:"emailProvider"`     // "outlook" 或 "moemail"
+	MoeMailDomains    []string                         `json:"moemailDomains"`    // 选中的域名列表
+	MoeMailConfigs    map[string][]email.MoeMailConfig `json:"moemailConfigs"`    // 域名 -> 配置列表映射
+	MoeMailRandomMode bool                             `json:"moemailRandomMode"` // 是否为随机模式
 }
 
 // StartTask 公开方法（包装器）
 func StartTask(req StartTaskRequest) map[string]interface{} {
-	if !license.Manager.IsValid {
-		// 尝试从注册表恢复授权状态（应用重启后 IsValid 会重置为 false）
-		result := license.Manager.CheckLicense()
-		if valid, _ := result["valid"].(bool); !valid {
-			return map[string]interface{}{"error": "授权无效，请先验证卡密"}
-		}
-	}
 	return startTask(req)
 }
 
 // startTask 启动注册任务（私有方法）
 func startTask(req StartTaskRequest) map[string]interface{} {
-	// 多重反调试检测
-	if security.CheckDebugger() {
-		time.Sleep(200 * time.Millisecond)
-		os.Exit(1)
-		return nil
-	}
-
-	// 验证内部状态完整性
-	if !security.VerifyIntegrity(false, license.Manager.IsValid) {
-		time.Sleep(200 * time.Millisecond)
-		os.Exit(1)
-		return nil
-	}
-
-	// 先验证卡密（向服务器重新验证）
-	encryptedData, err := license.LoadFromRegistry()
-	if err != nil {
-		Manager.mu.Lock()
-		Manager.running = false
-		Manager.mu.Unlock()
-		return map[string]interface{}{"error": "未找到卡密配置，请先验证卡密"}
-	}
-
-	// 解密配置
-	decryptedData, err := crypto.DecryptLocal(encryptedData)
-	if err != nil {
-		// 配置损坏，删除并引导重新验证（不置 licenseValid=false 避免触发反调试）
-		license.DeleteFromRegistry()
-		Manager.mu.Lock()
-		Manager.running = false
-		Manager.mu.Unlock()
-		return map[string]interface{}{"error": "卡密配置损坏，请退出卡密后重新验证"}
-	}
-
-	var cfg license.Config
-	if err := json.Unmarshal([]byte(decryptedData), &cfg); err != nil {
-		license.DeleteFromRegistry()
-		Manager.mu.Lock()
-		Manager.running = false
-		Manager.mu.Unlock()
-		return map[string]interface{}{"error": "卡密配置解析失败，请退出卡密后重新验证"}
-	}
-
-	// 向服务器验证卡密（使用 validate 端点，不消耗设备名额）
-	result := license.Manager.ValidateLicense(cfg.LicenseKey)
-	success, _ := result["success"].(bool)
-	if !success {
-		// 验证失败，返回错误但不清空注册表
-		license.Manager.IsValid = false
-		message, _ := result["message"].(string)
-		if message == "" {
-			message = "卡密验证失败"
-		}
-		return map[string]interface{}{"error": "卡密验证失败: " + message}
-	}
-
-	// 二次验证：检查返回的 success 字段
-	if !license.Manager.IsValid && !success {
-		return map[string]interface{}{"error": "授权验证失败"}
-	}
-
-	// 再次验证卡密（防止内存修改）
-	if !license.Manager.IsValid {
-		return map[string]interface{}{"error": "授权状态异常"}
-	}
-
 	Manager.mu.Lock()
 	if Manager.running {
 		Manager.mu.Unlock()
@@ -242,61 +163,18 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 		Manager.mu.Unlock()
 	}()
 
-	// 再次验证授权状态（多重检查）
-	if !license.Manager.IsValid {
-		log.Println("授权验证失败，任务终止")
-		return
-	}
-
-	// 验证程序完整性
-	if !security.VerifyIntegrity(false, license.Manager.IsValid) {
-		log.Println("程序完整性验证失败，任务终止")
-		return
-	}
-
-	// 向服务器重新验证卡密
-	encryptedData, err := license.LoadFromRegistry()
-	if err != nil {
-		log.Println("读取卡密配置失败，任务终止")
-		return
-	}
-
-	// 解密配置
-	decryptedData, err := crypto.DecryptLocal(encryptedData)
-	if err != nil {
-		log.Println("解密卡密配置失败，任务终止")
-		return
-	}
-
-	var cfg license.Config
-	if err := json.Unmarshal([]byte(decryptedData), &cfg); err != nil {
-		log.Println("解析卡密配置失败，任务终止")
-		return
-	}
-
-	result := license.Manager.ValidateLicense(cfg.LicenseKey)
-	success, _ := result["success"].(bool)
-	if !success {
-		log.Println("卡密验证失败，任务终止")
-		return
-	}
-
-	// 初始化加密模块（强制要求，无回退）
-	remoteCrypto, err := license.SetupRemoteCrypto(cfg.LicenseKey, cfg.DeviceID)
-	if err != nil {
-		log.Printf("加密模块初始化失败，任务终止: %v", err)
-		return
-	}
-
 	outDir := req.OutputPath
 	if outDir == "" {
-		outDir = storage.GetKiroDir()
+		outDir = storage.GetResultOutputDir()
 	}
 	os.MkdirAll(outDir, 0755)
 
 	taskConfig := core.NewConfig()
-	taskConfig.Proxy = req.Proxy
 	taskConfig.EmailProvider = emailProvider
+	taskConfig.Proxy = storage.GetProxy()
+	if taskConfig.Proxy != "" {
+		log.Printf("[Kiro] 已启用代理")
+	}
 
 	// 预先准备 MoeMail 域名池
 	var moemailDomainPool []string
@@ -317,29 +195,6 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 		log.Printf("[Kiro] MoeMail 域名池: %v (共 %d 个域名)", moemailDomainPool, len(moemailDomainPool))
 	} else if emailProvider == "outlook" {
 		taskConfig.UseOutlook = true
-	}
-
-	// 初始化代理池（智能代理池优先）
-	smartPool := GetSmartProxyPool()
-	useSmartProxy := smartPool != nil && smartPool.Count() > 0
-
-	if useSmartProxy {
-		log.Printf("[Kiro] 智能代理池已启用 (共 %d 个代理, 可用 %d 个)", smartPool.Count(), smartPool.ActiveCount())
-		// 取第一个可用代理检测 IP
-		firstProxy := smartPool.Next()
-		if firstProxy != "" {
-			go network.CheckIPInfo(firstProxy)
-		}
-	} else if req.Proxy != "" {
-		taskConfig.ProxyPool = core.NewProxyPool(req.Proxy)
-		if taskConfig.ProxyPool.Count() > 1 {
-			log.Printf("[Kiro] 代理池已启用，共 %d 个代理", taskConfig.ProxyPool.Count())
-		}
-		// 检测出口 IP 信息（取第一个代理检测）
-		firstProxy := strings.Split(strings.ReplaceAll(strings.ReplaceAll(req.Proxy, ";", ","), "\n", ","), ",")[0]
-		go network.CheckIPInfo(strings.TrimSpace(firstProxy))
-	} else {
-		go network.CheckIPInfo("")
 	}
 
 	// 统计计数器
@@ -371,22 +226,18 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 
 		var domain string
 		if req.MoeMailRandomMode {
-			// 随机模式：每次随机选择一个域名
-			randomIdx := time.Now().UnixNano() % int64(len(moemailDomainPool))
-			domain = moemailDomainPool[randomIdx]
+			domain = moemailDomainPool[rand.Intn(len(moemailDomainPool))]
 		} else {
-			// 轮询模式：按顺序轮询域名
 			domain = moemailDomainPool[moemailDomainIdx%len(moemailDomainPool)]
 			moemailDomainIdx++
 		}
 
-		// 从该域名的配置列表中随机选择一个
 		configs := moemailDomainConfigs[domain]
-		configIdx := time.Now().UnixNano() % int64(len(configs))
-		return domain, configs[configIdx]
+		return domain, configs[rand.Intn(len(configs))]
 	}
 
-	var otp400KillOnce sync.Once // OTP 400 熔断：确保只触发一次
+	// send-otp 400 熔断：任一任务遇到该错误即终止全部并发任务（只触发一次）
+	var otpKillOnce sync.Once
 	doTask := func(i int) {
 		select {
 		case <-Manager.stopCh:
@@ -397,25 +248,6 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 		taskCfg := *taskConfig
 		taskCfg.Password = core.GenPassword()
 		var currentEmail string
-
-		// 智能代理池：每个任务分配一个代理
-		var usedProxy string
-		if useSmartProxy {
-			usedProxy = smartPool.Next()
-			if usedProxy != "" {
-				taskCfg.Proxy = usedProxy
-			} else {
-				log.Printf("[Kiro][%d/%d] 智能代理池无可用代理，跳过", i+1, req.Count)
-				Manager.mu.Lock()
-				Manager.completed++
-				Manager.failed++
-				Manager.mu.Unlock()
-				return
-			}
-		} else if taskConfig.ProxyPool != nil && taskConfig.ProxyPool.Count() > 1 {
-			usedProxy = taskConfig.ProxyPool.Next()
-			taskCfg.Proxy = usedProxy
-		}
 
 		// 根据邮箱提供商类型获取邮箱
 		if emailProvider == "outlook" {
@@ -462,11 +294,11 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 		log.Printf("[Kiro][%d/%d] 开始注册", i+1, req.Count)
 		itemStart := time.Now()
 
-		// 重试机制：最多重试 2 次
+		const maxAttempts = 2
+
 		var result map[string]interface{}
-		maxRetries := 2
 	retryLoop:
-		for attempt := 0; attempt <= maxRetries; attempt++ {
+		for attempt := 0; attempt < maxAttempts; attempt++ {
 			// 每次重试前检查停止信号
 			select {
 			case <-Manager.stopCh:
@@ -476,7 +308,6 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 
 			if attempt > 0 {
 				log.Printf("[Kiro][%d/%d] 第 %d 次重试", i+1, req.Count, attempt)
-				// 可中断的延迟：stopCh 关闭时立即退出
 				select {
 				case <-Manager.stopCh:
 					return
@@ -484,7 +315,6 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 				}
 			}
 
-			// 再次检查 context 是否已取消
 			if taskCtx.Err() != nil {
 				return
 			}
@@ -492,8 +322,6 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 			reg := core.NewRegistrar(&taskCfg)
 			reg.Ctx = taskCtx
 			reg.TaskLabel = fmt.Sprintf("%d/%d", i+1, req.Count)
-			reg.EncryptFP = remoteCrypto.EncryptFP
-			reg.EncryptJWE = remoteCrypto.EncryptJWE
 			result = reg.Run()
 
 			if result["status"] == "success" {
@@ -502,7 +330,17 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 
 			errorMsg, _ := result["error"].(string)
 
-			// 邮箱已注册：标记当前账号，无限尝试下一个直到账号池耗尽
+			// AWS 熔断：任一任务遇到 400/BLOCKED/IP-flagged 类错误就终止全部
+			// 触发后继续跑只会烧邮箱、烧代理额度
+			if isKillSwitchError(errorMsg) {
+				otpKillOnce.Do(func() {
+					log.Printf("[Kiro] ⚠️ 检测到熔断级错误(%s)，立即终止所有注册任务", errorMsg)
+					go StopTask(true)
+				})
+				break
+			}
+
+			// 邮箱已注册：标记当前账号，换号重来（重置 attempt）
 			if taskConfig.UseOutlook && strings.Contains(errorMsg, "邮箱已注册过") {
 				log.Printf("[Kiro][%d/%d] %s 已注册，标记并换号", i+1, req.Count, currentEmail)
 				email.UpdateAccountStatus(currentEmail, true, false)
@@ -511,7 +349,7 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 					taskCfg.OutlookAccount = &acc
 					taskCfg.Password = core.GenPassword()
 					currentEmail = acc.Email
-					attempt = -1 // 重置重试计数
+					attempt = -1 // 换号：代理预算重置
 					continue retryLoop
 				}
 				// 账号池耗尽
@@ -519,8 +357,14 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 				break
 			}
 
-			// 不重试的错误类型（含 context 取消）
-			noRetryErrors := []string{"suspended", "临时邮箱不可能已存在", "邮箱创建失败", "context canceled", "context deadline exceeded", "IP或浏览器指纹被检测", "注册请求被拦截", "BLOCKED", "send-otp 失败"}
+			// Point of no return：Step12 已完成但整体失败 → 邮箱已消耗，不换代理重试
+			if pwSet, _ := result["passwordSet"].(bool); pwSet {
+				log.Printf("[Kiro][%d/%d] 密码已设置但验活失败，邮箱已消耗，不再重试", i+1, req.Count)
+				break
+			}
+
+			// 不重试的错误类型（含 context 取消 / 被封 / 临时邮箱重复）
+			noRetryErrors := []string{"suspended", "临时邮箱不可能已存在", "邮箱创建失败", "context canceled", "context deadline exceeded"}
 			shouldRetry := true
 			for _, noRetry := range noRetryErrors {
 				if strings.Contains(errorMsg, noRetry) {
@@ -529,7 +373,7 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 				}
 			}
 
-			if !shouldRetry || attempt >= maxRetries {
+			if !shouldRetry || attempt >= maxAttempts-1 {
 				break
 			}
 
@@ -556,7 +400,7 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 		taskDurations = append(taskDurations, itemDuration)
 		if !success {
 			errorMsg, _ := result["error"].(string)
-			errClass := data.ClassifyError(errorMsg)
+			errClass := classifyError(errorMsg)
 			switch errClass {
 			case "registered":
 				failRegistered++
@@ -569,34 +413,6 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 					failOther++
 				}
 			}
-
-			// 向智能代理池上报结果
-			if useSmartProxy && usedProxy != "" {
-				latencyMs := int64(itemDuration * 1000)
-				switch {
-				case strings.Contains(errorMsg, "400") || strings.Contains(errorMsg, "OTP") || strings.Contains(errorMsg, "send-otp"):
-					smartPool.ReportResult(usedProxy, proxy.ResultOTP400, latencyMs)
-					// ★ 根据策略决定：熔断 or 切换IP重试
-					retryMode := smartPool.GetPolicy().OTP400RetryMode
-					if retryMode == "switch_ip" {
-						log.Printf("[Kiro] OTP 400 → 切换IP重试 (proxy: %s)", usedProxy)
-					} else {
-						// 默认: 立即熔断
-						otp400KillOnce.Do(func() {
-							log.Printf("[Kiro] ⚠️ OTP 400 熔断触发！立即终止所有注册线程")
-							go StopTask(true)
-						})
-					}
-				case errClass == "banned" || strings.Contains(errorMsg, "suspended") || strings.Contains(errorMsg, "BLOCKED"):
-					smartPool.ReportResult(usedProxy, proxy.ResultBanned, latencyMs)
-				case strings.Contains(errorMsg, "timeout") || strings.Contains(errorMsg, "connection") || strings.Contains(errorMsg, "TLS"):
-					smartPool.ReportResult(usedProxy, proxy.ResultConnFail, latencyMs)
-				}
-			}
-		} else if useSmartProxy && usedProxy != "" {
-			// 成功也上报
-			latencyMs := int64(itemDuration * 1000)
-			smartPool.ReportResult(usedProxy, proxy.ResultSuccess, latencyMs)
 		}
 		statsMu.Unlock()
 
@@ -616,7 +432,11 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 			}
 			// 未设密码的失败邮箱不标记 registered，下次任务可继续使用
 		}
-		data.SaveKiroResult(result, outDir)
+		if success {
+			if err := data.SaveKiroSuccess(result, outDir); err != nil {
+				log.Printf("[Kiro] 保存结果失败: %v", err)
+			}
+		}
 	}
 
 	if req.Concurrency > 1 {
@@ -699,4 +519,39 @@ func runBatch(req StartTaskRequest, emailProvider string, outlookAccounts []emai
 		log.Printf("[Kiro] 成功结果: %s", outDir)
 	}
 	log.Println("[Kiro] ═══════════════════════════════")
+}
+
+// classifyError 根据错误信息粗分类，用于统计展示。
+func classifyError(errorMsg string) string {
+	if errorMsg == "" {
+		return "failed"
+	}
+	if strings.Contains(errorMsg, "suspended") {
+		return "banned"
+	}
+	if strings.Contains(errorMsg, "邮箱已注册过") || strings.Contains(errorMsg, "临时邮箱不可能已存在") {
+		return "registered"
+	}
+	return "failed"
+}
+
+// isKillSwitchError 判断该错误是否属于"AWS 已把我们拉黑，继续跑没意义"的熔断级错误。
+// 命中则立即终止全部并发任务。与单纯的瞬态失败（网络超时、验证码延迟）区分。
+func isKillSwitchError(errorMsg string) bool {
+	if errorMsg == "" {
+		return false
+	}
+	triggers := []string{
+		"send-otp 失败 (400)",     // Step9 原始 400
+		"注册被拦截",                // formatError 对 BLOCKED/注册请求被拦截 的翻译
+		"IP或浏览器指纹被检测",    // 指纹/IP 被标记
+		"BLOCKED",                  // 响应体里直接包含的风控标记
+		"注册请求被拦截",
+	}
+	for _, t := range triggers {
+		if strings.Contains(errorMsg, t) {
+			return true
+		}
+	}
+	return false
 }

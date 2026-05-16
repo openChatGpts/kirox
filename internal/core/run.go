@@ -2,13 +2,23 @@ package core
 
 import (
 	"log"
+	"regexp"
 	"strings"
 	"time"
 )
 
+// urlRegex 用于把日志/错误里的完整 URL 脱敏为 <endpoint>，避免暴露后端地址。
+var urlRegex = regexp.MustCompile(`https?://[^\s"'<>]+`)
+
+// scrubURLs 把字符串里所有 http(s):// URL 替换成 <endpoint>。
+// 用于向 UI 日志暴露的错误信息,避免泄漏 aws/amazonaws/kiro 等后端域名。
+func scrubURLs(s string) string {
+	return urlRegex.ReplaceAllString(s, "<endpoint>")
+}
+
 // formatError 将技术错误转换为用户友好的错误信息
 func (r *Registrar) formatError(step string, err error) string {
-	errMsg := err.Error()
+	errMsg := scrubURLs(err.Error())
 
 	// 网络连接错误
 	if strings.Contains(errMsg, "dial tcp") || strings.Contains(errMsg, "connectex") {
@@ -106,11 +116,6 @@ func (r *Registrar) ctxCancelled() bool {
 
 // Run 执行完整注册流程
 func (r *Registrar) Run() map[string]interface{} {
-	// 强制要求远程加密回调（防止绕过卡密验证）
-	if r.EncryptFP == nil || r.EncryptJWE == nil {
-		return map[string]interface{}{"status": "failed", "error": "未配置远程加密服务，请先验证卡密", "email": r.Email}
-	}
-
 	// 入口处立即检查 context
 	if r.ctxCancelled() {
 		return map[string]interface{}{"status": "failed", "error": "任务已取消", "email": r.Email}

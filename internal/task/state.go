@@ -64,9 +64,3 @@ func (s *State) GetStatus() map[string]interface{} {
 		"elapsed":   elapsed,
 	}
 }
-
-func (s *State) IsTaskRunning() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.running
-}

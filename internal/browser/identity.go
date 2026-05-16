@@ -345,15 +345,15 @@ func abs(x int) int {
 
 // ──────────────────── 核心: 随机身份生成 ────────────────────
 
-// RandomIdentity 创建随机浏览器身份 (纯算法生成, 无硬编码数据)
+// RandomIdentity 创建随机浏览器身份
 func RandomIdentity() *BrowserIdentity {
 	// Chrome 版本
 	cv := genChromeVersion()
 
-	// GPU (算法生成)
+	// GPU
 	gpuVendor, gpuModel := genGPU()
 
-	// Screen (算法生成)
+	// Screen
 	screen := genScreen()
 
 	// 硬件参数
@@ -365,10 +365,10 @@ func RandomIdentity() *BrowserIdentity {
 
 	platform := "Win32"
 
-	// Math 精度 (算法生成)
+	// Math 精度
 	mathTan, mathSin, mathCos := genMath()
 
-	// Canvas 数据 (算法模拟)
+	// Canvas 数据
 	canvasHash, histogram := generateCanvasData()
 
 	// WebGL 扩展

@@ -12,9 +12,9 @@ import (
 	httputil "reg_go/internal/http"
 )
 
-// VerifyAlive 验活: 刷新 Token + 查用量
+// VerifyAlive 验活: 刷新 Token + 查用量 + 查模型
 func (r *Registrar) VerifyAlive(awsToken map[string]interface{}) map[string]interface{} {
-	log.Println("[验活] 刷新 Token + 查用量")
+	log.Println("[验活] 刷新 Token + 查用量 + 查模型")
 	client := httputil.NewTLSClient(r.Cfg.Proxy, true, r.Identity.ChromeVer)
 
 	refreshToken, _ := awsToken["refreshToken"].(string)
@@ -47,52 +47,97 @@ func (r *Registrar) VerifyAlive(awsToken map[string]interface{}) map[string]inte
 	expiresIn, _ := tok["expiresIn"].(float64)
 	log.Printf("Token 刷新成功, expiresIn=%ds", int(expiresIn))
 
-	res := r.queryUsage(client, access, "https://q.us-east-1.amazonaws.com/getUsageLimits")
-	if res.suspended {
+	usageURL := "https://q.us-east-1.amazonaws.com/getUsageLimits?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST&isEmailRequired=true"
+	usageRes := queryGetEndpoint(client, access, usageURL)
+	if usageRes.suspended {
 		return map[string]interface{}{"alive": false, "suspended": true, "error": "suspended"}
 	}
-	if !res.ok {
-		res = r.queryUsage(client, access, "https://q.eu-central-1.amazonaws.com/getUsageLimits")
-		if res.suspended {
-			return map[string]interface{}{"alive": false, "suspended": true, "error": "suspended"}
-		}
-		if !res.ok {
-			return map[string]interface{}{"alive": false, "error": "usage query failed"}
-		}
+	if !usageRes.ok {
+		return map[string]interface{}{"alive": false, "error": "usage query failed"}
 	}
 
-	return r.parseUsage(res.body)
+	modelRes := queryGetEndpoint(client, access, "https://q.us-east-1.amazonaws.com/ListAvailableModels?origin=AI_EDITOR")
+	if modelRes.suspended {
+		return map[string]interface{}{"alive": false, "suspended": true, "error": "suspended"}
+	}
+
+	kiroRefreshBody, _ := json.Marshal(map[string]string{
+		"clientId":     r.ClientID,
+		"clientSecret": r.ClientSecret,
+		"refreshToken": refreshToken,
+		"grantType":    "refresh_token",
+	})
+	kiroRes := queryPostEndpoint(client, "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken", kiroRefreshBody)
+	if kiroRes.suspended {
+		return map[string]interface{}{"alive": false, "suspended": true, "error": "suspended"}
+	}
+
+	return r.parseUsage(usageRes.body)
 }
 
-type usageResult struct {
+type endpointResult struct {
 	body      []byte
 	ok        bool
 	suspended bool
 }
 
-func (r *Registrar) queryUsage(client interface{ Do(req *fhttp.Request) (*fhttp.Response, error) }, access, baseURL string) usageResult {
-	usageURL := baseURL + "?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST&isEmailRequired=true"
-	req, _ := fhttp.NewRequest("GET", usageURL, nil)
+func checkEndpointResponse(url string, statusCode int, body []byte) endpointResult {
+	label := endpointLabel(url)
+	if statusCode == 403 {
+		log.Printf("账号已被封禁 (403) [%s]", label)
+		return endpointResult{suspended: true}
+	}
+	if statusCode != 200 {
+		log.Printf("端点查询失败 [%s]: %d", label, statusCode)
+		return endpointResult{}
+	}
+	return endpointResult{body: body, ok: true}
+}
+
+// endpointLabel 把完整 URL 归一到简短标签，避免日志泄露后端。
+func endpointLabel(url string) string {
+	switch {
+	case strings.Contains(url, "getUsageLimits"):
+		return "usage"
+	case strings.Contains(url, "ListAvailableModels"):
+		return "models"
+	case strings.Contains(url, "refreshToken"):
+		return "kiro-refresh"
+	case strings.Contains(url, "/token"):
+		return "oidc-token"
+	default:
+		return "endpoint"
+	}
+}
+
+func queryGetEndpoint(client interface{ Do(req *fhttp.Request) (*fhttp.Response, error) }, access, url string) endpointResult {
+	req, _ := fhttp.NewRequest("GET", url, nil)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+access)
 	req.Header.Set("User-Agent", "aws-sdk-js/1.0.18 ua/2.1 os/windows lang/js md/nodejs#20.16.0 api/codewhispererstreaming#1.0.18 m/E KiroIDE-0.6.18")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("用量查询异常: %v", err)
-		return usageResult{}
+		log.Printf("端点查询异常 [%s]: %s", endpointLabel(url), scrubURLs(err.Error()))
+		return endpointResult{}
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	return checkEndpointResponse(url, resp.StatusCode, body)
+}
 
-	if resp.StatusCode == 403 && strings.Contains(strings.ToLower(string(body)), "suspended") {
-		log.Println("账号已被封禁 (suspended)")
-		return usageResult{suspended: true}
+func queryPostEndpoint(client interface{ Do(req *fhttp.Request) (*fhttp.Response, error) }, url string, payload []byte) endpointResult {
+	req, _ := fhttp.NewRequest("POST", url, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("端点查询异常 [%s]: %s", endpointLabel(url), scrubURLs(err.Error()))
+		return endpointResult{}
 	}
-	if resp.StatusCode != 200 {
-		return usageResult{}
-	}
-	return usageResult{body: body, ok: true}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	return checkEndpointResponse(url, resp.StatusCode, body)
 }
 
 func (r *Registrar) parseUsage(body []byte) map[string]interface{} {
@@ -145,139 +190,4 @@ func (r *Registrar) parseUsage(body []byte) map[string]interface{} {
 	}
 }
 
-// VerifyAccountResult 独立验证结果
-type VerifyAccountResult struct {
-	Alive        bool    `json:"alive"`
-	Email        string  `json:"email"`
-	Subscription string  `json:"subscription"`
-	CreditUsed   float64 `json:"creditUsed"`
-	CreditLimit  float64 `json:"creditLimit"`
-	Suspended    bool    `json:"suspended"`
-	Error        string  `json:"error,omitempty"`
-}
-
-// VerifyAccount 独立验证函数，不依赖 Registrar 实例
-// 使用 clientId/clientSecret/refreshToken 刷新 Token 并查询用量
-func VerifyAccount(clientID, clientSecret, refreshToken, proxy string) VerifyAccountResult {
-	client := httputil.NewTLSClient(proxy, true, "144.0.0.0")
-
-	// 刷新 Token
-	tokenBody, _ := json.Marshal(map[string]string{
-		"clientId":     clientID,
-		"clientSecret": clientSecret,
-		"refreshToken": refreshToken,
-		"grantType":    "refresh_token",
-	})
-	req, _ := fhttp.NewRequest("POST", "https://oidc.us-east-1.amazonaws.com/token",
-		bytes.NewReader(tokenBody))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return VerifyAccountResult{Error: err.Error()}
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return VerifyAccountResult{Error: fmt.Sprintf("refresh failed: %d", resp.StatusCode)}
-	}
-
-	var tok map[string]interface{}
-	json.Unmarshal(body, &tok)
-	access, _ := tok["accessToken"].(string)
-
-	// 查询用量 (先尝试 us-east-1, 再尝试 eu-central-1)
-	res := queryUsageStandalone(client, access, "https://q.us-east-1.amazonaws.com/getUsageLimits")
-	if res.suspended {
-		return VerifyAccountResult{Suspended: true, Error: "suspended"}
-	}
-	if !res.ok {
-		res = queryUsageStandalone(client, access, "https://q.eu-central-1.amazonaws.com/getUsageLimits")
-		if res.suspended {
-			return VerifyAccountResult{Suspended: true, Error: "suspended"}
-		}
-		if !res.ok {
-			return VerifyAccountResult{Error: "usage query failed"}
-		}
-	}
-
-	return parseUsageStandalone(res.body)
-}
-
-// queryUsageStandalone 独立的用量查询
-func queryUsageStandalone(client interface{ Do(req *fhttp.Request) (*fhttp.Response, error) }, access, baseURL string) usageResult {
-	usageURL := baseURL + "?origin=AI_EDITOR&resourceType=AGENTIC_REQUEST&isEmailRequired=true"
-	req, _ := fhttp.NewRequest("GET", usageURL, nil)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+access)
-	req.Header.Set("User-Agent", "aws-sdk-js/1.0.18 ua/2.1 os/windows lang/js md/nodejs#20.16.0 api/codewhispererstreaming#1.0.18 m/E KiroIDE-0.6.18")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return usageResult{}
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-
-	if resp.StatusCode == 403 && strings.Contains(strings.ToLower(string(body)), "suspended") {
-		return usageResult{suspended: true}
-	}
-	if resp.StatusCode != 200 {
-		return usageResult{}
-	}
-	return usageResult{body: body, ok: true}
-}
-
-// parseUsageStandalone 独立的用量解析
-func parseUsageStandalone(body []byte) VerifyAccountResult {
-	var usage map[string]interface{}
-	json.Unmarshal(body, &usage)
-
-	userInfo, _ := usage["userInfo"].(map[string]interface{})
-	emailAddr, _ := userInfo["email"].(string)
-	subInfo, _ := usage["subscriptionInfo"].(map[string]interface{})
-	sub, _ := subInfo["subscriptionTitle"].(string)
-	if sub == "" {
-		sub = "Free"
-	}
-
-	var totalLimit, totalUsed float64
-	if breakdown, ok := usage["usageBreakdownList"].([]interface{}); ok {
-		for _, item := range breakdown {
-			b, _ := item.(map[string]interface{})
-			rt, _ := b["resourceType"].(string)
-			dn, _ := b["displayName"].(string)
-			if rt == "CREDIT" || dn == "Credits" {
-				baseLimit, _ := b["usageLimitWithPrecision"].(float64)
-				if baseLimit == 0 {
-					baseLimit, _ = b["usageLimit"].(float64)
-				}
-				baseUsed, _ := b["currentUsageWithPrecision"].(float64)
-				if baseUsed == 0 {
-					baseUsed, _ = b["currentUsage"].(float64)
-				}
-				totalLimit = baseLimit
-				totalUsed = baseUsed
-
-				if ft, ok := b["freeTrialInfo"].(map[string]interface{}); ok {
-					if ftStatus, _ := ft["freeTrialStatus"].(string); ftStatus == "ACTIVE" {
-						ftLimit, _ := ft["usageLimitWithPrecision"].(float64)
-						ftUsed, _ := ft["currentUsageWithPrecision"].(float64)
-						totalLimit += ftLimit
-						totalUsed += ftUsed
-					}
-				}
-				break
-			}
-		}
-	}
-
-	return VerifyAccountResult{
-		Alive:        true,
-		Email:        emailAddr,
-		Subscription: sub,
-		CreditUsed:   totalUsed,
-		CreditLimit:  totalLimit,
-	}
-}
 

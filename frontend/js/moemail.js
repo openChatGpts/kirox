@@ -43,11 +43,6 @@ function saveMoeMailConfigStatus() {
 
 // 更新 MoeMail UI
 function updateMoeMailUI() {
-  // 更新概览页面统计
-  const countEl = document.getElementById('ov-moemail-count');
-  const activeEl = document.getElementById('ov-moemail-active');
-  if (countEl) countEl.textContent = moemailConfigs.length;
-  
   // 计算可用配置数量
   let activeCount = 0;
   moemailConfigs.forEach(cfg => {
@@ -56,267 +51,197 @@ function updateMoeMailUI() {
       activeCount++;
     }
   });
-  if (activeEl) activeEl.textContent = activeCount;
 
   // 更新模态框计数
   const modalCount = document.getElementById('moemail-count');
   if (modalCount) modalCount.textContent = moemailConfigs.length + ' 个';
 
+  // 更新设置页摘要
+  const summaryEl = document.getElementById('settings-moemail-summary');
+  if (summaryEl) {
+    if (moemailConfigs.length === 0) {
+      summaryEl.textContent = '未配置';
+    } else {
+      summaryEl.textContent = '已配置 ' + moemailConfigs.length + ' 个，可用 ' + activeCount + ' 个';
+    }
+  }
+
   // 更新配置列表
   renderMoeMailConfigList();
-  
-  // 更新概览页面域名列表
-  updateMoeMailDomainsList();
 }
 
-// 更新概览页面域名列表
-function updateMoeMailDomainsList() {
-  const container = document.getElementById('ov-moemail-domains-container');
-  const listDiv = document.getElementById('ov-moemail-domains-list');
-  const paginationDiv = document.getElementById('ov-moemail-domains-pagination');
-  const domainsCountEl = document.getElementById('ov-moemail-domains');
-
-  if (!container || !listDiv || !paginationDiv) return;
-
-  // 收集所有可用域名及其配置数量
-  const domainMap = new Map(); // domain -> configs count
-  moemailConfigs.forEach(cfg => {
-    const status = moemailConfigStatus[cfg.name];
-    if (status && status.tested && status.success && status.domains) {
-      status.domains.forEach(domain => {
-        domainMap.set(domain, (domainMap.get(domain) || 0) + 1);
-      });
-    }
-  });
-
-  const allDomains = Array.from(domainMap.entries()).map(([domain, count]) => ({
-    domain,
-    configCount: count
-  }));
-
-  // 更新域名数量显示
-  if (domainsCountEl) {
-    domainsCountEl.textContent = allDomains.length;
-  }
-
-  if (allDomains.length === 0) {
-    // 检查是否有已测试的配置
-    const hasTestedConfigs = moemailConfigs.some(cfg => {
-      const status = moemailConfigStatus[cfg.name];
-      return status && status.tested;
-    });
-
-    if (hasTestedConfigs) {
-      // 有测试过的配置但没有域名
-      container.style.display = 'block';
-      listDiv.innerHTML = '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px;background:var(--bg-subtle);border-radius:8px;border:1px dashed var(--border);">暂无可用域名</div>';
-      paginationDiv.innerHTML = '';
-    } else {
-      // 没有测试过配置
-      container.style.display = 'none';
-    }
-    return;
-  }
-
-  container.style.display = 'block';
-
-  // 分页配置
-  const pageSize = 12;
-  const totalPages = Math.ceil(allDomains.length / pageSize);
-  const currentPage = window.moemailDomainsPage || 1;
-
-  // 计算当前页的域名
-  const startIdx = (currentPage - 1) * pageSize;
-  const endIdx = Math.min(startIdx + pageSize, allDomains.length);
-  const pageDomains = allDomains.slice(startIdx, endIdx);
-
-  // 渲染域名列表 - 使用网格布局
-  listDiv.innerHTML = pageDomains.map(item => {
-    // 根据配置数量选择颜色
-    let badgeColor = '#10b981'; // 绿色
-    if (item.configCount >= 3) {
-      badgeColor = '#3b82f6'; // 蓝色 - 多配置
-    } else if (item.configCount === 1) {
-      badgeColor = '#f59e0b'; // 橙色 - 单配置
-    }
-
-    return `
-      <div style="
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        padding:10px 14px;
-        background:var(--bg-card);
-        border:1px solid var(--border);
-        border-radius:10px;
-        font-size:12px;
-        transition:all 0.2s ease;
-        cursor:default;
-        box-shadow:0 1px 3px rgba(0,0,0,0.05);
-        min-width:0;
-      "
-      onmouseover="this.style.borderColor='var(--primary)';this.style.boxShadow='0 2px 8px rgba(59,130,246,0.15)';this.style.transform='translateY(-1px)';"
-      onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.05)';this.style.transform='translateY(0)';">
-        <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="${badgeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-            <circle cx="12" cy="12" r="10"/>
-            <path d="M12 6v6l4 2"/>
-          </svg>
-          <span style="
-            font-family:var(--font-mono);
-            color:var(--text);
-            font-weight:600;
-            overflow:hidden;
-            text-overflow:ellipsis;
-            white-space:nowrap;
-          ">${escapeHtml(item.domain)}</span>
-        </div>
-        <div style="
-          display:flex;
-          align-items:center;
-          gap:4px;
-          padding:3px 8px;
-          background:${badgeColor}15;
-          border-radius:6px;
-          flex-shrink:0;
-        ">
-          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="${badgeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-          <span style="font-size:11px;font-weight:700;color:${badgeColor};">${item.configCount}</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  // 渲染分页按钮
-  if (totalPages > 1) {
-    let paginationHtml = '';
-
-    // 上一页按钮
-    if (currentPage > 1) {
-      paginationHtml += `
-        <button onclick="changeMoeMailDomainsPage(${currentPage - 1})" style="
-          padding:6px 10px;
-          background:var(--bg-subtle);
-          border:1px solid var(--border);
-          border-radius:6px;
-          font-size:11px;
-          cursor:pointer;
-          color:var(--text);
-          transition:all 0.2s;
-          font-weight:600;
-        " onmouseover="this.style.background='var(--bg-hover)';this.style.borderColor='var(--primary)';" onmouseout="this.style.background='var(--bg-subtle)';this.style.borderColor='var(--border)';">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-        </button>
-      `;
-    }
-
-    // 页码按钮
-    for (let i = 1; i <= totalPages; i++) {
-      if (i === currentPage) {
-        paginationHtml += `
-          <button style="
-            padding:6px 12px;
-            background:var(--primary);
-            border:1px solid var(--primary);
-            border-radius:6px;
-            font-size:11px;
-            color:#fff;
-            font-weight:700;
-            box-shadow:0 2px 4px rgba(59,130,246,0.3);
-          ">${i}</button>
-        `;
-      } else if (i === 1 || i === totalPages || Math.abs(i - currentPage) <= 1) {
-        paginationHtml += `
-          <button onclick="changeMoeMailDomainsPage(${i})" style="
-            padding:6px 12px;
-            background:var(--bg-subtle);
-            border:1px solid var(--border);
-            border-radius:6px;
-            font-size:11px;
-            cursor:pointer;
-            color:var(--text);
-            transition:all 0.2s;
-            font-weight:600;
-          " onmouseover="this.style.background='var(--bg-hover)';this.style.borderColor='var(--primary)';" onmouseout="this.style.background='var(--bg-subtle)';this.style.borderColor='var(--border)';">${i}</button>
-        `;
-      } else if (Math.abs(i - currentPage) === 2) {
-        paginationHtml += `<span style="padding:6px 8px;color:var(--text-muted);font-size:11px;font-weight:600;">···</span>`;
-      }
-    }
-
-    // 下一页按钮
-    if (currentPage < totalPages) {
-      paginationHtml += `
-        <button onclick="changeMoeMailDomainsPage(${currentPage + 1})" style="
-          padding:6px 10px;
-          background:var(--bg-subtle);
-          border:1px solid var(--border);
-          border-radius:6px;
-          font-size:11px;
-          cursor:pointer;
-          color:var(--text);
-          transition:all 0.2s;
-          font-weight:600;
-        " onmouseover="this.style.background='var(--bg-hover)';this.style.borderColor='var(--primary)';" onmouseout="this.style.background='var(--bg-subtle)';this.style.borderColor='var(--border)';">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">
-            <polyline points="9 18 15 12 9 6"/>
-          </svg>
-        </button>
-      `;
-    }
-
-    paginationDiv.innerHTML = paginationHtml;
-  } else {
-    paginationDiv.innerHTML = '';
-  }
-}
-
-// 切换域名列表页码
-function changeMoeMailDomainsPage(page) {
-  window.moemailDomainsPage = page;
-  updateMoeMailDomainsList();
-}
-
-// 渲染配置列表
+// 渲染配置列表（模态框 + 设置页内联）
 function renderMoeMailConfigList() {
+  // 模态框表格
   const tbody = document.getElementById('moemail-config-body');
-  if (!tbody) return;
-
-  if (moemailConfigs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">暂无配置</td></tr>';
-    return;
+  if (tbody) {
+    if (moemailConfigs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">暂无配置</td></tr>';
+    } else {
+      tbody.innerHTML = moemailConfigs.map((cfg, idx) => {
+        const status = moemailConfigStatus[cfg.name] || { tested: false };
+        let statusHtml = '';
+        if (!status.tested) {
+          statusHtml = '<span style="color:var(--text-muted);font-weight:600;font-size:12px;">未测试</span>';
+        } else if (status.success) {
+          statusHtml = '<span style="color:var(--success);font-weight:600;font-size:12px;">可用</span>';
+        } else {
+          statusHtml = '<span style="color:var(--danger);font-weight:600;font-size:12px;">不可用</span>';
+        }
+        return `<tr>
+          <td>${idx + 1}</td>
+          <td>${escapeHtml(cfg.name)}</td>
+          <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${escapeHtml(cfg.url)}</td>
+          <td>${statusHtml}</td>
+          <td style="text-align:right;white-space:nowrap;">
+            <a href="javascript:void(0)" onclick="testMoeMailConfigByIndex(${idx})" style="color:var(--primary);margin-right:12px;font-size:12px;">测试</a>
+            <a href="javascript:void(0)" onclick="deleteMoeMailConfig(${idx})" style="color:var(--danger);font-size:12px;">删除</a>
+          </td>
+        </tr>`;
+      }).join('');
+    }
   }
 
-  tbody.innerHTML = moemailConfigs.map((cfg, idx) => {
-    const status = moemailConfigStatus[cfg.name] || { tested: false };
-    let statusHtml = '';
-    
-    if (!status.tested) {
-      statusHtml = '<span style="color:var(--text-muted);font-weight:600;font-size:12px;">未测试</span>';
-    } else if (status.success) {
-      statusHtml = '<span style="color:var(--success);font-weight:600;font-size:12px;">可用</span>';
+  // 设置页内联列表
+  const inlineList = document.getElementById('moemail-inline-list');
+  if (inlineList) {
+    if (moemailConfigs.length === 0) {
+      inlineList.innerHTML = `
+        <div class="moemail-empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+            <polyline points="22,6 12,13 2,6"></polyline>
+          </svg>
+          <div>暂无配置，请在上方添加 MoeMail 配置</div>
+        </div>
+      `;
     } else {
-      statusHtml = '<span style="color:var(--danger);font-weight:600;font-size:12px;">不可用</span>';
+      inlineList.innerHTML = moemailConfigs.map((cfg, idx) => {
+        const status = moemailConfigStatus[cfg.name] || { tested: false };
+        let dotClass = 'untested';
+        let statusLabel = '未测试';
+        let statusClass = 'untested';
+        let domainsHtml = '';
+
+        if (status.tested && status.success) {
+          dotClass = 'success';
+          statusLabel = '可用';
+          statusClass = 'success';
+          const domains = status.domains || [];
+          if (domains.length > 0) {
+            domainsHtml = '<div class="moemail-domain-tags">' +
+              domains.map(d => '<span class="moemail-domain-tag">' + escapeHtml(d) + '</span>').join('') +
+              '</div>';
+          }
+        } else if (status.tested) {
+          dotClass = 'error';
+          statusLabel = '不可用';
+          statusClass = 'error';
+        }
+
+        return `
+          <div class="moemail-config-item">
+            <div class="moemail-config-main">
+              <div class="moemail-status-dot ${dotClass}"></div>
+              <div class="moemail-config-info">
+                <div class="moemail-config-name">${escapeHtml(cfg.name)}</div>
+                <div class="moemail-config-details">
+                  <span class="moemail-config-url">${escapeHtml(cfg.url)}</span>
+                  <span class="moemail-config-status ${statusClass}">${statusLabel}</span>
+                </div>
+                ${domainsHtml}
+              </div>
+            </div>
+            <div class="moemail-config-actions">
+              <button onclick="testMoeMailConfigByIndex(${idx})" class="btn btn-secondary btn-sm">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                测试
+              </button>
+              <button onclick="deleteMoeMailConfig(${idx})" class="btn btn-secondary btn-sm" style="color:var(--danger);">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                </svg>
+                删除
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
     }
-    
-    return `
-      <tr>
-        <td>${idx + 1}</td>
-        <td>${escapeHtml(cfg.name)}</td>
-        <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);">${escapeHtml(cfg.url)}</td>
-        <td>${statusHtml}</td>
-        <td style="text-align:right;white-space:nowrap;">
-          <a href="javascript:void(0)" onclick="testMoeMailConfigByIndex(${idx})" style="color:var(--primary);margin-right:12px;font-size:12px;">测试</a>
-          <a href="javascript:void(0)" onclick="deleteMoeMailConfig(${idx})" style="color:var(--danger);font-size:12px;">删除</a>
-        </td>
-      </tr>
-    `;
-  }).join('');
+  }
+}
+
+// 自动生成配置名称
+function generateMoeMailName() {
+  let idx = moemailConfigs.length + 1;
+  let name = '配置 ' + idx;
+  while (moemailConfigs.some(c => c.name === name)) {
+    idx++;
+    name = '配置 ' + idx;
+  }
+  return name;
+}
+
+// 内联添加 MoeMail 配置
+async function inlineAddMoeMail() {
+  var name = document.getElementById('moemail-inline-name').value.trim();
+  var url = document.getElementById('moemail-inline-url').value.trim();
+  var apikey = document.getElementById('moemail-inline-apikey').value.trim();
+  if (!url || !apikey) {
+    showToast('请填写 API URL 和 API Key', 'error');
+    return;
+  }
+  if (!name) {
+    name = generateMoeMailName();
+  }
+  if (moemailConfigs.some(c => c.name === name)) {
+    showToast('配置名称已存在', 'error');
+    return;
+  }
+  moemailConfigs.push({ name: name, url: url, apiKey: apikey });
+  const saveResult = await window.go.main.App.SaveMoeMailConfigs(JSON.stringify(moemailConfigs));
+  if (saveResult.error) {
+    moemailConfigs.pop();
+    showToast('保存失败: ' + saveResult.error, 'error');
+    return;
+  }
+  document.getElementById('moemail-inline-name').value = '';
+  document.getElementById('moemail-inline-url').value = '';
+  document.getElementById('moemail-inline-apikey').value = '';
+  showToast('已添加: ' + name);
+  updateMoeMailUI();
+}
+
+// 内联测试 MoeMail 配置
+async function inlineTestMoeMail() {
+  var url = document.getElementById('moemail-inline-url').value.trim();
+  var apikey = document.getElementById('moemail-inline-apikey').value.trim();
+  if (!url || !apikey) {
+    showToast('请填写 API URL 和 Key', 'error');
+    return;
+  }
+  var btn = document.getElementById('moemail-inline-test-btn');
+  var statusEl = document.getElementById('moemail-inline-status');
+  btn.disabled = true; btn.textContent = '测试中...';
+  statusEl.textContent = '';
+  try {
+    var result = await window.go.main.App.TestMoeMailConnection(JSON.stringify({url: url, apiKey: apikey}));
+    if (result.success) {
+      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = '连接成功，' + (result.domainCount || 0) + ' 个域名';
+    } else {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = result.error || '连接失败';
+    }
+  } catch(e) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = '测试失败';
+  }
+  btn.disabled = false; btn.textContent = '测试';
 }
 
 // 打开 MoeMail 模态框
@@ -592,14 +517,31 @@ async function clearAllMoeMailConfigs() {
   });
 }
 
-// HTML 转义
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+// 启动时自动测试所有配置
+async function autoTestAllMoeMailConfigs() {
+  if (moemailConfigs.length === 0) return;
+  console.log('[MoeMail] 启动自动测试，共 ' + moemailConfigs.length + ' 个配置');
+  for (let i = 0; i < moemailConfigs.length; i++) {
+    const config = moemailConfigs[i];
+    try {
+      const result = await window.go.main.App.TestMoeMailConnection(JSON.stringify(config));
+      if (result.error) {
+        moemailConfigStatus[config.name] = { tested: true, success: false, domains: [] };
+      } else {
+        const domains = result.domains || [];
+        moemailConfigStatus[config.name] = { tested: true, success: true, domains: domains, domainCount: domains.length };
+      }
+    } catch (e) {
+      moemailConfigStatus[config.name] = { tested: true, success: false, domains: [] };
+    }
+  }
+  saveMoeMailConfigStatus();
+  updateMoeMailUI();
+  console.log('[MoeMail] 自动测试完成');
 }
 
 // 页面加载时初始化
-document.addEventListener('DOMContentLoaded', function() {
-  loadMoeMailConfigs();
+document.addEventListener('DOMContentLoaded', async function() {
+  await loadMoeMailConfigs();
+  autoTestAllMoeMailConfigs();
 });

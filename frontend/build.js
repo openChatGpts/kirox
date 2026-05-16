@@ -53,7 +53,8 @@ if (!fs.existsSync(distAssetsDir)) {
   fs.mkdirSync(distAssetsDir, { recursive: true });
 }
 const assetFiles = ['kiro.svg', 'logo.svg', 'openai.svg', 'claude-color.svg', 'deepseek-color.svg',
-  'grok.svg', 'qwen-color.svg', 'chatglm-color.svg', 'minimax-color.svg', 'outlook.png'];
+  'grok.svg', 'qwen-color.svg', 'chatglm-color.svg', 'minimax-color.svg', 'outlook.png', 'appicon.png',
+  'wx.jpg', 'zfb.jpg'];
 for (const file of assetFiles) {
   const src = path.join(assetsDir, file);
   if (fs.existsSync(src)) {
@@ -64,13 +65,19 @@ console.log('✓ 已复制 assets/ 图标资源 (' + assetFiles.length + ' 个)'
 
 // removed redundant css lines
 
+// 复制 fonts 目录到 dist/fonts/
+const fontsSource = path.join(__dirname, 'fonts');
+const fontsDest = path.join(distDir, 'fonts');
+copyDir(fontsSource, fontsDest);
+console.log('✓ 已复制 fonts 目录');
+
 // 复制 JS 到 dist/js/
 const jsDir = path.join(__dirname, 'js');
 const distJsDir = path.join(distDir, 'js');
 if (!fs.existsSync(distJsDir)) {
   fs.mkdirSync(distJsDir, { recursive: true });
 }
-const jsFiles = ['accounts.js', 'task.js', 'overview.js', 'app.js', 'moemail.js', 'license.js', 'ui.js', 'proxy.js'];
+const jsFiles = ['accounts.js', 'task.js', 'overview.js', 'app.js', 'moemail.js', 'ui.js'];
 for (const file of jsFiles) {
   fs.copyFileSync(path.join(jsDir, file), path.join(distJsDir, file));
 }

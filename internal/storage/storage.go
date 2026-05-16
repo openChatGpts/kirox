@@ -9,14 +9,21 @@ import (
 	"strings"
 	"sync"
 	"time"
+)
 
-	"reg_go/internal/crypto"
+const (
+	keyDataDir         = "data_dir"
+	keyResultOutputDir = "result_output_dir"
+	keyProxy           = "proxy"
 )
 
 var (
-	_dataDir     string
-	_dataDirOnce sync.Once
-	_customDir   string
+	_dataDir          string
+	_dataDirOnce      sync.Once
+	_resultOutputDir  string
+	_resultOutputOnce sync.Once
+	_proxy            string
+	_proxyOnce        sync.Once
 )
 
 // GetDefaultDataDir 获取默认应用数据目录
@@ -33,28 +40,64 @@ func getConfigFilePath() string {
 	return filepath.Join(GetDefaultDataDir(), "storage.conf")
 }
 
-// loadCustomDir 从配置文件读取自定义目录
-func loadCustomDir() string {
+// loadConfigMap 解析 storage.conf 为 KV；兼容旧版（整文件即 data_dir 路径）
+func loadConfigMap() map[string]string {
+	m := map[string]string{}
 	data, err := os.ReadFile(getConfigFilePath())
 	if err != nil {
-		return ""
+		return m
 	}
-	dir := strings.TrimSpace(string(data))
-	if dir != "" {
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			return dir
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return m
+	}
+	if !strings.ContainsRune(text, '=') {
+		m[keyDataDir] = text
+		return m
+	}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		i := strings.IndexByte(line, '=')
+		if i < 0 {
+			continue
+		}
+		k := strings.TrimSpace(line[:i])
+		v := strings.TrimSpace(line[i+1:])
+		if k != "" {
+			m[k] = v
 		}
 	}
-	return ""
+	return m
+}
+
+func saveConfigMap(m map[string]string) error {
+	os.MkdirAll(GetDefaultDataDir(), 0755)
+	var b strings.Builder
+	for _, k := range []string{keyDataDir, keyResultOutputDir, keyProxy} {
+		if v := strings.TrimSpace(m[k]); v != "" {
+			b.WriteString(k)
+			b.WriteByte('=')
+			b.WriteString(v)
+			b.WriteByte('\n')
+		}
+	}
+	return os.WriteFile(getConfigFilePath(), []byte(b.String()), 0600)
 }
 
 // GetDataDir 获取应用数据目录（优先使用自定义目录）
 func GetDataDir() string {
 	_dataDirOnce.Do(func() {
-		_customDir = loadCustomDir()
-		if _customDir != "" {
-			_dataDir = _customDir
-		} else {
+		m := loadConfigMap()
+		custom := strings.TrimSpace(m[keyDataDir])
+		if custom != "" {
+			if info, err := os.Stat(custom); err == nil && info.IsDir() {
+				_dataDir = custom
+			}
+		}
+		if _dataDir == "" {
 			_dataDir = GetDefaultDataDir()
 		}
 		os.MkdirAll(_dataDir, 0755)
@@ -62,13 +105,12 @@ func GetDataDir() string {
 	return _dataDir
 }
 
-// SetDataDirPath 设置自定义存储目录（自动迁移旧数据）
+// SetDataDirPath 设置自定义存储目录（自动迁移 accounts.dat）
 func SetDataDirPath(dir string) (string, error) {
 	if dir == "" {
 		return "", fmt.Errorf("目录不能为空")
 	}
-
-	oldDir := _dataDir
+	oldDir := GetDataDir()
 
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)
@@ -84,12 +126,12 @@ func SetDataDirPath(dir string) (string, error) {
 		}
 	}
 
-	os.MkdirAll(GetDefaultDataDir(), 0755)
-	if err := os.WriteFile(getConfigFilePath(), []byte(dir), 0600); err != nil {
+	m := loadConfigMap()
+	m[keyDataDir] = dir
+	if err := saveConfigMap(m); err != nil {
 		return "", fmt.Errorf("保存配置失败: %w", err)
 	}
 
-	_customDir = dir
 	_dataDir = dir
 	_dataDirOnce = sync.Once{}
 	_dataDirOnce.Do(func() {})
@@ -99,7 +141,7 @@ func SetDataDirPath(dir string) (string, error) {
 
 // ResetDataDirPath 重置为默认存储目录（自动迁移数据回默认目录）
 func ResetDataDirPath() string {
-	oldDir := _dataDir
+	oldDir := GetDataDir()
 	defaultDir := GetDefaultDataDir()
 
 	if oldDir != "" && oldDir != defaultDir {
@@ -109,9 +151,11 @@ func ResetDataDirPath() string {
 		}
 	}
 
-	os.Remove(getConfigFilePath())
+	m := loadConfigMap()
+	delete(m, keyDataDir)
+	_ = saveConfigMap(m)
+
 	os.MkdirAll(defaultDir, 0755)
-	_customDir = ""
 	_dataDir = defaultDir
 	_dataDirOnce = sync.Once{}
 	_dataDirOnce.Do(func() {})
@@ -119,81 +163,158 @@ func ResetDataDirPath() string {
 	return defaultDir
 }
 
-// migrateData 将旧目录中的数据文件迁移到新目录，返回迁移文件数
+// getDefaultResultOutputDir 默认输出目录：应用可执行文件所在目录。
+// 若无法解析可执行文件路径，回落到当前工作目录。
+func getDefaultResultOutputDir() string {
+	if exe, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+		return filepath.Dir(exe)
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		return cwd
+	}
+	return "."
+}
+
+// GetResultOutputDir 获取注册结果输出目录（默认为应用可执行文件所在目录）
+func GetResultOutputDir() string {
+	_resultOutputOnce.Do(func() {
+		m := loadConfigMap()
+		if custom := strings.TrimSpace(m[keyResultOutputDir]); custom != "" {
+			_resultOutputDir = custom
+		} else {
+			_resultOutputDir = getDefaultResultOutputDir()
+		}
+		os.MkdirAll(_resultOutputDir, 0755)
+	})
+	return _resultOutputDir
+}
+
+// SetResultOutputDir 设置自定义输出目录（不迁移已有 JSON 文件）
+func SetResultOutputDir(dir string) (string, error) {
+	if dir == "" {
+		return "", fmt.Errorf("目录不能为空")
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("创建目录失败: %w", err)
+	}
+	m := loadConfigMap()
+	m[keyResultOutputDir] = dir
+	if err := saveConfigMap(m); err != nil {
+		return "", fmt.Errorf("保存配置失败: %w", err)
+	}
+	_resultOutputDir = dir
+	_resultOutputOnce = sync.Once{}
+	_resultOutputOnce.Do(func() {})
+	return dir, nil
+}
+
+// ResetResultOutputDir 重置为默认输出目录（应用可执行文件所在目录）
+func ResetResultOutputDir() string {
+	m := loadConfigMap()
+	delete(m, keyResultOutputDir)
+	_ = saveConfigMap(m)
+
+	defaultDir := getDefaultResultOutputDir()
+	os.MkdirAll(defaultDir, 0755)
+	_resultOutputDir = defaultDir
+	_resultOutputOnce = sync.Once{}
+	_resultOutputOnce.Do(func() {})
+	return defaultDir
+}
+
+// GetProxy 返回当前全局代理 URL（空字符串表示直连）。
+func GetProxy() string {
+	_proxyOnce.Do(func() {
+		m := loadConfigMap()
+		_proxy = strings.TrimSpace(m[keyProxy])
+	})
+	return _proxy
+}
+
+// SetProxy 设置全局代理 URL（会自动归一化常见简写格式）。
+func SetProxy(raw string) (string, error) {
+	normalized := NormalizeProxyAddress(strings.TrimSpace(raw))
+	m := loadConfigMap()
+	if normalized == "" {
+		delete(m, keyProxy)
+	} else {
+		m[keyProxy] = normalized
+	}
+	if err := saveConfigMap(m); err != nil {
+		return "", err
+	}
+	_proxy = normalized
+	_proxyOnce = sync.Once{}
+	_proxyOnce.Do(func() {})
+	return normalized, nil
+}
+
+// ResetProxy 清空代理配置，恢复直连。
+func ResetProxy() {
+	m := loadConfigMap()
+	delete(m, keyProxy)
+	_ = saveConfigMap(m)
+	_proxy = ""
+	_proxyOnce = sync.Once{}
+	_proxyOnce.Do(func() {})
+}
+
+// NormalizeProxyAddress 归一化常见代理写法为完整 URL:
+//   - 已带 scheme 的 URL 原样返回
+//   - host:port:user:pass -> http://user:pass@host:port (cliproxy 等导出格式)
+//   - host:port -> socks5://host:port
+//   - user:pass@host:port -> http://user:pass@host:port
+func NormalizeProxyAddress(s string) string {
+	if s == "" {
+		return ""
+	}
+	if strings.Contains(s, "://") {
+		return s
+	}
+	if strings.Contains(s, "@") {
+		return "http://" + s
+	}
+	parts := strings.Split(s, ":")
+	switch len(parts) {
+	case 4:
+		host, port, user, pass := parts[0], parts[1], parts[2], parts[3]
+		if host != "" && port != "" {
+			return fmt.Sprintf("http://%s:%s@%s:%s", user, pass, host, port)
+		}
+	case 2:
+		return "socks5://" + s
+	}
+	return s
+}
+
+// migrateData 将旧目录中的 accounts.dat 迁移到新目录
 func migrateData(oldDir, newDir string) (int, error) {
 	migrated := 0
-
-	items := []string{
-		"accounts.dat",
-		"kiro",
-	}
+	items := []string{"accounts.dat"}
 
 	for _, item := range items {
 		src := filepath.Join(oldDir, item)
 		dst := filepath.Join(newDir, item)
 
-		info, err := os.Stat(src)
-		if err != nil {
+		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-
-		if info.IsDir() {
-			n, err := migrateDir(src, dst)
-			if err != nil {
-				return migrated, err
-			}
-			migrated += n
-		} else {
-			if _, err := os.Stat(dst); err != nil {
-				data, err := os.ReadFile(src)
-				if err != nil {
-					return migrated, err
-				}
-				os.MkdirAll(filepath.Dir(dst), 0755)
-				if err := os.WriteFile(dst, data, 0600); err != nil {
-					return migrated, err
-				}
-				migrated++
-			}
+		if _, err := os.Stat(dst); err == nil {
+			continue
 		}
-	}
-
-	return migrated, nil
-}
-
-func migrateDir(srcDir, dstDir string) (int, error) {
-	migrated := 0
-	os.MkdirAll(dstDir, 0755)
-
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		return 0, err
-	}
-
-	for _, e := range entries {
-		src := filepath.Join(srcDir, e.Name())
-		dst := filepath.Join(dstDir, e.Name())
-
-		if e.IsDir() {
-			n, err := migrateDir(src, dst)
-			if err != nil {
-				return migrated, err
-			}
-			migrated += n
-		} else if strings.HasSuffix(e.Name(), ".dat") {
-			if _, err := os.Stat(dst); err != nil {
-				data, err := os.ReadFile(src)
-				if err != nil {
-					return migrated, err
-				}
-				if err := os.WriteFile(dst, data, 0600); err != nil {
-					return migrated, err
-				}
-				migrated++
-			}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return migrated, err
 		}
+		os.MkdirAll(filepath.Dir(dst), 0755)
+		if err := os.WriteFile(dst, data, 0600); err != nil {
+			return migrated, err
+		}
+		migrated++
 	}
-
 	return migrated, nil
 }
 
@@ -216,7 +337,7 @@ func loadAccountsCache() {
 	if _accountsLoaded {
 		return
 	}
-	data, err := loadEncryptedJSONDirect(GetAccountsPath())
+	data, err := loadJSON(GetAccountsPath())
 	if err != nil {
 		_accountsCache = []map[string]interface{}{}
 	} else {
@@ -276,7 +397,7 @@ func flushAccountsToDisk() {
 	copy(data, _accountsCache)
 	_accountsMu.RUnlock()
 
-	err := SaveEncryptedJSON(GetAccountsPath(), data)
+	err := SaveJSON(GetAccountsPath(), data)
 
 	_accountsMu.Lock()
 	if err == nil {
@@ -293,13 +414,6 @@ func FlushAccountsSync() {
 	flushAccountsToDisk()
 }
 
-// GetKiroDir 获取 Kiro 结果目录
-func GetKiroDir() string {
-	dir := filepath.Join(GetDataDir(), "kiro")
-	os.MkdirAll(dir, 0755)
-	return dir
-}
-
 // ===== 加密存储读写 =====
 
 var fileMutexes sync.Map
@@ -309,104 +423,70 @@ func getFileMutex(filePath string) *sync.Mutex {
 	return val.(*sync.Mutex)
 }
 
-// LoadEncryptedJSON 从加密文件读取 JSON 数组（线程安全）
-func LoadEncryptedJSON(filePath string) ([]map[string]interface{}, error) {
+// LoadJSON 从文件读取 JSON 数组（线程安全）
+func LoadJSON(filePath string) ([]map[string]interface{}, error) {
 	mu := getFileMutex(filePath)
 	mu.Lock()
 	defer mu.Unlock()
-	return loadEncryptedJSONUnsafe(filePath)
+	return loadJSON(filePath)
 }
 
-// SaveEncryptedJSON 将 JSON 数组加密写入文件（线程安全，原子写入）
-func SaveEncryptedJSON(filePath string, items []map[string]interface{}) error {
+// SaveJSON 将 JSON 数组写入文件（线程安全，原子写入）
+func SaveJSON(filePath string, items []map[string]interface{}) error {
 	mu := getFileMutex(filePath)
 	mu.Lock()
 	defer mu.Unlock()
-	return saveEncryptedJSONUnsafe(filePath, items)
+	return saveJSON(filePath, items)
 }
 
-// AppendEncryptedJSON 向加密 JSON 数组文件追加一条记录（线程安全）
-func AppendEncryptedJSON(filePath string, item map[string]interface{}) error {
+// AppendJSON 向 JSON 数组文件追加一条记录（线程安全）
+func AppendJSON(filePath string, item map[string]interface{}) error {
 	mu := getFileMutex(filePath)
 	mu.Lock()
 	defer mu.Unlock()
-
-	existing, _ := loadEncryptedJSONUnsafe(filePath)
+	existing, _ := loadJSON(filePath)
 	existing = append(existing, item)
-	return saveEncryptedJSONUnsafe(filePath, existing)
+	return saveJSON(filePath, existing)
 }
 
-// ModifyEncryptedJSON 原子读-改-写
-func ModifyEncryptedJSON(filePath string, fn func([]map[string]interface{}) []map[string]interface{}) error {
+// ModifyJSON 原子读-改-写
+func ModifyJSON(filePath string, fn func([]map[string]interface{}) []map[string]interface{}) error {
 	mu := getFileMutex(filePath)
 	mu.Lock()
 	defer mu.Unlock()
-
-	existing, _ := loadEncryptedJSONUnsafe(filePath)
-	modified := fn(existing)
-	return saveEncryptedJSONUnsafe(filePath, modified)
+	existing, _ := loadJSON(filePath)
+	return saveJSON(filePath, fn(existing))
 }
 
-// CountEncryptedJSON 统计加密 JSON 数组文件中的记录数
-func CountEncryptedJSON(filePath string) int {
-	items, err := LoadEncryptedJSON(filePath)
+// CountJSON 统计 JSON 数组文件中的记录数
+func CountJSON(filePath string) int {
+	items, err := LoadJSON(filePath)
 	if err != nil {
 		return 0
 	}
 	return len(items)
 }
 
-// --- 内部无锁版本 ---
-
-func loadEncryptedJSONDirect(filePath string) ([]map[string]interface{}, error) {
+func loadJSON(filePath string) ([]map[string]interface{}, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
-	decrypted, err := crypto.DecryptLocal(string(data))
-	if err != nil {
-		return nil, err
-	}
 	var result []map[string]interface{}
-	if err := json.Unmarshal([]byte(decrypted), &result); err != nil {
+	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func loadEncryptedJSONUnsafe(filePath string) ([]map[string]interface{}, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	decrypted, err := crypto.DecryptLocal(string(data))
-	if err != nil {
-		return nil, err
-	}
-
-	var result []map[string]interface{}
-	if err := json.Unmarshal([]byte(decrypted), &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func saveEncryptedJSONUnsafe(filePath string, items []map[string]interface{}) error {
+func saveJSON(filePath string, items []map[string]interface{}) error {
 	b, err := json.Marshal(items)
 	if err != nil {
 		return err
 	}
-
-	encrypted, err := crypto.EncryptLocal(string(b))
-	if err != nil {
-		return err
-	}
-
 	os.MkdirAll(filepath.Dir(filePath), 0755)
-
 	tmpFile := filePath + ".tmp"
-	if err := os.WriteFile(tmpFile, []byte(encrypted), 0600); err != nil {
+	if err := os.WriteFile(tmpFile, b, 0600); err != nil {
 		return err
 	}
 	return os.Rename(tmpFile, filePath)

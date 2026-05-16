@@ -7,12 +7,6 @@ iframe::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
 
-/* ===== 卡密激活卡片暗色主题 ===== */
-[data-theme="dark"] #license-activation-card {
-  background: rgba(255,255,255,0.04) !important;
-  border-color: rgba(255,255,255,0.06) !important;
-}
-
 /* ===== Toggle Switch ===== */
 .toggle-switch {
   position: relative;
@@ -250,15 +244,15 @@ iframe::-webkit-scrollbar {
   letter-spacing: 0;
 }
 
-.btn-primary { 
-  background: var(--accent); 
-  color: #fff; 
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
 }
 
-.btn-primary:hover:not(:disabled) { 
-  background: var(--text-secondary); 
-  transform: translateY(-1px); 
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+.btn-primary:hover:not(:disabled) {
+  background: var(--text-secondary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .btn-primary:disabled {
@@ -266,6 +260,102 @@ iframe::-webkit-scrollbar {
   color: var(--text-muted);
   cursor: not-allowed;
   transform: none;
+}
+
+.btn-dark {
+  background: #111827;
+  color: #fff;
+  border: none;
+}
+
+.btn-dark:hover:not(:disabled) {
+  background: #1f2937;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+
+.btn-dark:disabled {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  transform: none;
+}
+
+[data-theme="dark"] .btn-dark {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+[data-theme="dark"] .btn-dark:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.author-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.author-row:hover {
+  background: var(--bg-hover);
+}
+.author-row img {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+/* Changelog renderer */
+#info-changelog { padding: 20px; min-height: 120px; }
+.cl-h2 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.cl-h2:first-child { margin-top: 0; }
+.cl-h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 12px 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cl-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.cl-list li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  padding: 2px 0 2px 16px;
+  position: relative;
+}
+.cl-list li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--primary, #6366f1);
+}
+.cl-p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin: 4px 0;
 }
 
 .btn-secondary { 
@@ -316,23 +406,72 @@ iframe::-webkit-scrollbar {
 }
 
 .log-box {
-  background: #1a1a1a;
-  border: 1px solid rgba(255,255,255,0.06);
+  background: #0f1115;
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: var(--radius);
   height: 280px;
   overflow-y: auto;
-  padding: 20px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: rgba(255,255,255,0.6);
-  line-height: 1.8;
+  padding: 18px 22px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'SF Mono', 'Consolas', ui-monospace, monospace;
+  font-size: 12.5px;
+  font-weight: 450;
+  color: rgba(226, 232, 240, 0.82);
+  line-height: 1.62;
+  letter-spacing: 0.01em;
+  font-feature-settings: "liga" 1, "calt" 1, "zero" 1, "tnum" 1, "cv02" 1, "cv11" 1;
+  font-variant-ligatures: contextual;
+  font-variant-numeric: tabular-nums slashed-zero;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
   white-space: pre-wrap;
-  word-break: break-all;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
 }
 
-.log-box::-webkit-scrollbar { display: none; }
+.log-box::-webkit-scrollbar { width: 8px; }
+.log-box::-webkit-scrollbar-track { background: transparent; }
+.log-box::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+}
+.log-box::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* 每一行的结构化着色 */
+.log-line {
+  display: block;
+  padding: 1px 6px;
+  margin: 0 -6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.log-line:hover { background: rgba(255,255,255,0.05); }
+.log-line:active { background: rgba(125, 211, 252, 0.15); }
+.log-line.log-copied {
+  background: rgba(134, 239, 172, 0.12);
+  transition: background 0.6s;
+}
+
+.log-time {
+  color: rgba(148, 163, 184, 0.7);
+  margin-right: 8px;
+  user-select: none;
+}
+.log-tag {
+  color: #7dd3fc;
+  font-weight: 500;
+  margin-right: 4px;
+}
+.log-step {
+  color: #c4b5fd;
+  margin-right: 4px;
+}
+.log-line-success { color: #86efac; }
+.log-line-error   { color: #fca5a5; }
+.log-line-warn    { color: #fcd34d; }
+.log-line-debug   { color: rgba(148, 163, 184, 0.55); font-style: italic; }
 
 .log-box-full {
   height: calc(100vh - 200px);

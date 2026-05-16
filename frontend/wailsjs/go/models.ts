@@ -19,64 +19,12 @@ export namespace email {
 
 }
 
-export namespace proxy {
-	
-	export class ProxyPolicy {
-	    selection_mode: string;
-	    allow_countries?: string[];
-	    block_countries?: string[];
-	    allow_continents?: string[];
-	    allow_regions?: string[];
-	    allow_ip_types?: string[];
-	    otp400_retry_mode: string;
-	    otp400_action: string;
-	    otp400_cooldown_min: number;
-	    otp400_max_retries: number;
-	    ban_action: string;
-	    ban_cooldown_min: number;
-	    ban_max_count: number;
-	    conn_fail_action: string;
-	    conn_fail_cooldown_min: number;
-	    conn_fail_max_retries: number;
-	    auto_recover: boolean;
-	    blacklist_permanent: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new ProxyPolicy(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.selection_mode = source["selection_mode"];
-	        this.allow_countries = source["allow_countries"];
-	        this.block_countries = source["block_countries"];
-	        this.allow_continents = source["allow_continents"];
-	        this.allow_regions = source["allow_regions"];
-	        this.allow_ip_types = source["allow_ip_types"];
-	        this.otp400_retry_mode = source["otp400_retry_mode"];
-	        this.otp400_action = source["otp400_action"];
-	        this.otp400_cooldown_min = source["otp400_cooldown_min"];
-	        this.otp400_max_retries = source["otp400_max_retries"];
-	        this.ban_action = source["ban_action"];
-	        this.ban_cooldown_min = source["ban_cooldown_min"];
-	        this.ban_max_count = source["ban_max_count"];
-	        this.conn_fail_action = source["conn_fail_action"];
-	        this.conn_fail_cooldown_min = source["conn_fail_cooldown_min"];
-	        this.conn_fail_max_retries = source["conn_fail_max_retries"];
-	        this.auto_recover = source["auto_recover"];
-	        this.blacklist_permanent = source["blacklist_permanent"];
-	    }
-	}
-
-}
-
 export namespace task {
 	
 	export class StartTaskRequest {
 	    count: number;
 	    concurrency: number;
 	    delay: number;
-	    proxy: string;
 	    outputPath: string;
 	    emailProvider: string;
 	    moemailDomains: string[];
@@ -92,7 +40,6 @@ export namespace task {
 	        this.count = source["count"];
 	        this.concurrency = source["concurrency"];
 	        this.delay = source["delay"];
-	        this.proxy = source["proxy"];
 	        this.outputPath = source["outputPath"];
 	        this.emailProvider = source["emailProvider"];
 	        this.moemailDomains = source["moemailDomains"];

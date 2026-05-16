@@ -1,82 +1,43 @@
 package core
 
 import (
-	"bytes"
+	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"strings"
-
-	fhttp "github.com/bogdanfinn/fhttp"
-	"github.com/fxamacker/cbor/v2"
-
-	httputil "reg_go/internal/http"
 )
 
-// Step15KiroExchange Kiro ExchangeToken
+// Step15KiroExchange 用 auth code 兑换 Kiro access/refresh token。
+// 与 Step14 配套，走标准 OAuth2 authorization_code + PKCE。
 func (r *Registrar) Step15KiroExchange(code string) (map[string]interface{}, error) {
 	log.Println("[15] Kiro ExchangeToken")
-	kvid := httputil.KiroVisitorID()
 
-	cborBody, _ := cbor.Marshal(map[string]string{
-		"idp":          "BuilderId",
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/oauth/callback", r.KiroRedirectPort)
+	body, _, err := r.DoPost(r.Cfg.OIDCBase+"/token", map[string]interface{}{
+		"clientId":     r.KiroClientID,
+		"clientSecret": r.KiroClientSecret,
+		"grantType":    "authorization_code",
 		"code":         code,
+		"redirectUri":  redirectURI,
 		"codeVerifier": r.KiroCodeVerifier,
-		"redirectUri":  r.Cfg.KiroRedirectURI,
-		"state":        r.KiroState,
-	})
-
-	h := map[string]string{
-		"Accept":                "application/cbor",
-		"Content-Type":          "application/cbor",
-		"User-Agent":            r.Identity.UA,
-		"Origin":                r.Cfg.KiroBase,
-		"Referer":               fmt.Sprintf("%s/signin/oauth?code=%s&state=%s", r.Cfg.KiroRedirectURI, code, r.KiroState),
-		"smithy-protocol":       "rpc-v2-cbor",
-		"x-amz-user-agent":     fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/Windows#NT-10.0 lang/js md/browser#Google-Chrome_%s m/M,E", r.Identity.ChromeVer),
-		"x-kiro-visitorid":     kvid,
-		"amz-sdk-invocation-id": NewUUID(),
-		"amz-sdk-request":      "attempt=1; max=1",
-		"priority":             "u=1, i",
-	}
-	var cookieParts []string
-	if v, ok := r.Cookies["awsccc"]; ok {
-		cookieParts = append(cookieParts, "awsccc="+v)
-	}
-	cookieParts = append(cookieParts, "kiro-visitor-id="+kvid)
-	h["Cookie"] = strings.Join(cookieParts, "; ")
-
-	exchangeURL := r.Cfg.KiroBase + "/service/KiroWebPortalService/operation/ExchangeToken"
-	client := httputil.NewTLSClient(r.Cfg.Proxy, true, r.Identity.ChromeVer)
-	req, _ := fhttp.NewRequest("POST", exchangeURL, bytes.NewReader(cborBody))
-	httputil.SetHeaders(req, h)
-	resp, err := client.Do(req)
+	}, map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return nil, err
 	}
-	respBody, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("ExchangeToken 失败 %d: %s", resp.StatusCode, string(respBody[:min(200, len(respBody))]))
-	}
-
-	for _, c := range resp.Cookies() {
-		r.Cookies[c.Name] = c.Value
-	}
 
 	var rd map[string]interface{}
-	cbor.Unmarshal(respBody, &rd)
-
+	if err := json.Unmarshal(body, &rd); err != nil {
+		return nil, fmt.Errorf("token 响应解析失败: %s", string(body))
+	}
 	at, _ := rd["accessToken"].(string)
-	csrf, _ := rd["csrfToken"].(string)
-	st := r.Cookies["SessionToken"]
-	rt := r.Cookies["RefreshToken"]
+	if at == "" {
+		return nil, fmt.Errorf("ExchangeToken 失败: %s", string(body))
+	}
+	rt, _ := rd["refreshToken"].(string)
 
 	if len(at) > 40 {
 		log.Printf("accessToken=%s...", at[:40])
 	}
-	if rt != "" && len(rt) > 40 {
+	if len(rt) > 40 {
 		log.Printf("refreshToken=%s...", rt[:40])
 	} else {
 		log.Println("refreshToken=N/A")
@@ -85,8 +46,7 @@ func (r *Registrar) Step15KiroExchange(code string) (map[string]interface{}, err
 	return map[string]interface{}{
 		"accessToken":  at,
 		"refreshToken": rt,
-		"csrfToken":    csrf,
-		"sessionToken": st,
 		"expiresIn":    rd["expiresIn"],
+		"tokenType":    rd["tokenType"],
 	}, nil
 }

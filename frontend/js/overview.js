@@ -29,62 +29,27 @@ async function loadTaskStatus() {
 
 // updateOverviewUI 更新概览界面
 function updateOverviewUI(data) {
-  // 版本
-  var verEl = document.getElementById('ov-version');
-  if (verEl) verEl.textContent = data.version || '-';
-
   var kiro = data.kiro || {};
-  var outlook = data.outlook || {};
 
-  // 顶部统计卡片
-  setText('ov-kiro-total', kiro.totalAccounts || 0);
-  setText('ov-kiro-success', kiro.successAccounts || 0);
-  setText('ov-outlook-total', outlook.total || 0);
-  setText('ov-total-failed', kiro.failedAccounts || 0);
-  setText('ov-kiro-banned', kiro.bannedAccounts || 0);
-
-  // 计算注册成功率
-  var successCount = kiro.successAccounts || 0;
-  var failedCount = kiro.failedAccounts || 0;
-  var totalAttempts = successCount + failedCount;
-  var successRate = totalAttempts > 0 ? Math.round(successCount / totalAttempts * 100) : 0;
-  setText('ov-kiro-success-rate', successRate + '%');
-
-  // Kiro 详情
-  setText('ov-kiro-accounts', kiro.successAccounts || 0);
-  setText('ov-kiro-failed', kiro.failedAccounts || 0);
-  setText('ov-kiro-banned-detail', kiro.bannedAccounts || 0);
-
-  // Kiro 任务状态
-  var kiroTaskEl = document.getElementById('ov-kiro-task');
-  var kiroIdleEl = document.getElementById('ov-kiro-task-idle');
+  // Kiro 状态徽章
   var kiroStatusEl = document.getElementById('ov-kiro-status');
-  if (kiro.taskRunning) {
-    if (kiroTaskEl) kiroTaskEl.style.display = 'block';
-    if (kiroIdleEl) kiroIdleEl.style.display = 'none';
-    if (kiroStatusEl) { kiroStatusEl.textContent = '运行中'; kiroStatusEl.className = 'db-badge db-badge-running'; }
-    setText('ov-kiro-task-progress', (kiro.taskCompleted || 0) + '/' + (kiro.taskTotal || 0));
-    var kiroPercent = kiro.taskTotal > 0 ? (kiro.taskCompleted / kiro.taskTotal * 100) : 0;
-    setWidth('ov-kiro-task-bar', kiroPercent + '%');
-  } else {
-    if (kiroTaskEl) kiroTaskEl.style.display = 'none';
-    if (kiroIdleEl) kiroIdleEl.style.display = 'block';
-    if (kiroStatusEl) { kiroStatusEl.textContent = '空闲'; kiroStatusEl.className = 'db-badge db-badge-idle'; }
+  if (kiroStatusEl) {
+    if (kiro.taskRunning) {
+      kiroStatusEl.textContent = '运行中';
+      kiroStatusEl.className = 'db-badge db-badge-running';
+    } else {
+      kiroStatusEl.textContent = '空闲';
+      kiroStatusEl.className = 'db-badge db-badge-idle';
+    }
   }
 
-  // Outlook 统计
-  setText('ov-outlook-count', outlook.total || 0);
-  setText('ov-outlook-pending', outlook.pending || 0);
-  setText('ov-outlook-pending2', outlook.pending || 0);
-  setText('ov-outlook-success', outlook.success || 0);
-  setText('ov-outlook-registered', outlook.registered || 0);
-
-  // Outlook 使用率
-  var outlookTotal = outlook.total || 0;
-  var outlookRegistered = outlook.registered || 0;
-  var outlookRate = outlookTotal > 0 ? Math.round(outlookRegistered / outlookTotal * 100) : 0;
-  setText('ov-outlook-rate', outlookRate + '%');
-  setWidth('ov-outlook-bar', outlookRate + '%');
+  // 本次任务成功数 + 成功率（来自实时任务状态）
+  var taskSuccess = kiro.taskSuccess || 0;
+  var taskFailed = kiro.taskFailed || 0;
+  var taskTotal = taskSuccess + taskFailed;
+  setText('ov-kiro-success', taskSuccess);
+  var successRate = taskTotal > 0 ? Math.round(taskSuccess / taskTotal * 100) : 0;
+  setText('ov-kiro-success-rate', successRate + '%');
 }
 
 // 辅助函数
@@ -101,22 +66,14 @@ function setWidth(id, width) {
 // 更新任务状态卡片（从快速轮询）
 function updateTaskStatusUI(data) {
   var kiro = data.kiro || {};
-
-  // Kiro 任务状态
-  var kiroTaskEl = document.getElementById('ov-kiro-task');
-  var kiroIdleEl = document.getElementById('ov-kiro-task-idle');
   var kiroStatusEl = document.getElementById('ov-kiro-status');
+  if (!kiroStatusEl) return;
   if (kiro.taskRunning) {
-    if (kiroTaskEl) kiroTaskEl.style.display = 'block';
-    if (kiroIdleEl) kiroIdleEl.style.display = 'none';
-    if (kiroStatusEl) { kiroStatusEl.textContent = '运行中'; kiroStatusEl.className = 'db-badge db-badge-running'; }
-    setText('ov-kiro-task-progress', (kiro.taskCompleted || 0) + '/' + (kiro.taskTotal || 0));
-    var kiroPercent = kiro.taskTotal > 0 ? (kiro.taskCompleted / kiro.taskTotal * 100) : 0;
-    setWidth('ov-kiro-task-bar', kiroPercent + '%');
+    kiroStatusEl.textContent = '运行中';
+    kiroStatusEl.className = 'db-badge db-badge-running';
   } else {
-    if (kiroTaskEl) kiroTaskEl.style.display = 'none';
-    if (kiroIdleEl) kiroIdleEl.style.display = 'block';
-    if (kiroStatusEl) { kiroStatusEl.textContent = '空闲'; kiroStatusEl.className = 'db-badge db-badge-idle'; }
+    kiroStatusEl.textContent = '空闲';
+    kiroStatusEl.className = 'db-badge db-badge-idle';
   }
 }
 

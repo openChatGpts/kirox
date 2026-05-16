@@ -1,4 +1,4 @@
-// ===== 任务控制 + 代理测试 + 更新系统 + 状态轮询 =====
+// ===== 任务控制 + 更新系统 + 状态轮询 =====
 
 function formatTime(seconds) {
   seconds = Math.round(seconds);
@@ -11,32 +11,106 @@ function formatTime(seconds) {
   return h + 'h ' + m + 'm';
 }
 
-// 任务模态框
-function openKiroTaskModal() { document.getElementById('kiro-task-modal').classList.add('show'); }
-function closeKiroTaskModal() { document.getElementById('kiro-task-modal').classList.remove('show'); }
+// 任务模态框（保留兼容，已迁移到注册页面）
+function openKiroTaskModal() { switchPage('register'); }
+function closeKiroTaskModal() {}
 
 var updateInfo = null;
 var _prevRunning = false;
 window._kiroLogs = [];
 
+function _escapeLogHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// 将一行日志解析为带高亮 span 的 HTML。
+// 识别模式: "HH:MM:SS [prefix] [step] rest"
+function _formatLogLine(line) {
+  var raw = line.replace(/\r?\n$/, '');
+  if (!raw) return '';
+
+  // 整行级别判定
+  var low = raw.toLowerCase();
+  var cls = 'log-line';
+  if (raw.indexOf('注册成功') >= 0 || raw.indexOf('已验活') >= 0 || raw.indexOf('[OK]') >= 0) {
+    cls += ' log-line-success';
+  } else if (raw.indexOf('失败') >= 0 || raw.indexOf('错误') >= 0 || raw.indexOf('异常') >= 0 ||
+             raw.indexOf('被拦截') >= 0 || raw.indexOf('被封') >= 0 ||
+             low.indexOf('error') >= 0 || low.indexOf('failed') >= 0) {
+    cls += ' log-line-error';
+  } else if (raw.indexOf('⚠') >= 0 || raw.indexOf('熔断') >= 0 || raw.indexOf('重试') >= 0) {
+    cls += ' log-line-warn';
+  } else if (raw.indexOf('[DEBUG]') >= 0) {
+    cls += ' log-line-debug';
+  }
+
+  // 分段高亮: 时间戳 + [标签] + [step] + 其余
+  var html = '';
+  var rest = raw;
+
+  var m = rest.match(/^(\d{2}:\d{2}:\d{2})\s*/);
+  if (m) {
+    html += '<span class="log-time">' + _escapeLogHtml(m[1]) + '</span>';
+    rest = rest.slice(m[0].length);
+  }
+
+  // 匹配若干 [xxx] 前缀，时间戳之后的所有方括号标签
+  while (true) {
+    var t = rest.match(/^(\[[^\]]+\])\s*/);
+    if (!t) break;
+    var label = t[1];
+    // 纯数字步骤如 [1] [12.5] 用 step 色，其余用 tag 色
+    var inner = label.slice(1, -1);
+    var isStep = /^\d+(\.\d+)?(\/\d+)?$/.test(inner);
+    html += '<span class="' + (isStep ? 'log-step' : 'log-tag') + '">' +
+      _escapeLogHtml(label) + '</span>';
+    rest = rest.slice(t[0].length);
+  }
+
+  html += _escapeLogHtml(rest);
+  return '<span class="' + cls + '">' + html + '</span>';
+}
+
 function renderUnifiedLogs() {
   var box = document.getElementById('unified-log-box');
   if (!box) return;
-  
-  // 检查用户是否在底部（距离底部小于50px）
+
+  // 首次渲染时挂上行级点击复制（事件委托，后续 innerHTML 重写不会丢）
+  if (!box.dataset.copyBound) {
+    box.addEventListener('click', function(e) {
+      var line = e.target.closest('.log-line');
+      if (!line || !box.contains(line)) return;
+      // 如果用户正在选中文字，让选择行为优先，不触发行复制
+      var sel = window.getSelection && window.getSelection();
+      if (sel && sel.toString().length > 0) return;
+      var text = line.textContent.replace(/\u00A0/g, ' ').trim();
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(function() {
+        line.classList.add('log-copied');
+        setTimeout(function() { line.classList.remove('log-copied'); }, 600);
+        if (typeof showToast === 'function') showToast('复制成功', 'success');
+      }).catch(function(err) {
+        if (typeof showToast === 'function') showToast('复制失败: ' + err.message, 'error');
+      });
+    });
+    box.dataset.copyBound = '1';
+  }
+
   var wasAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 50;
-  
+
   var logs = window._kiroLogs || [];
-  var text = logs.map(function(l) { return l.replace(/^\s+/, ''); }).join('');
-  var newText = text || '暂无日志';
-  
-  // 检查是否有新内容
-  var hasNewContent = box.textContent !== newText;
-  box.textContent = newText;
-  
-  // 只在有新内容且用户在底部时才滚动
-  if (hasNewContent && wasAtBottom) {
-    box.scrollTop = box.scrollHeight;
+  var html;
+  if (!logs.length) {
+    html = '<span style="color:var(--text-muted);">暂无日志</span>';
+  } else {
+    html = logs.map(function(l) {
+      return _formatLogLine(l.replace(/^\s+/, ''));
+    }).join('\n');
+  }
+
+  if (box.innerHTML !== html) {
+    box.innerHTML = html;
+    if (wasAtBottom) box.scrollTop = box.scrollHeight;
   }
 }
 
@@ -77,53 +151,6 @@ function notifyTaskComplete(taskName, success, failed, total) {
       });
     } catch(e) {}
   }
-}
-
-async function testProxy() {
-  var proxyStr = document.getElementById('cfg-proxy').value.trim();
-  if (!proxyStr) {
-    showToast('请先输入代理地址', 'error');
-    return;
-  }
-
-  var btn = document.getElementById('btn-test-proxy');
-  var resultDiv = document.getElementById('proxy-test-result');
-  btn.disabled = true;
-  btn.textContent = '测试中...';
-  resultDiv.style.display = 'none';
-
-  try {
-    var result = await window.go.main.App.TestProxy(proxyStr);
-    if (result.error) {
-      showToast(result.error, 'error');
-      btn.disabled = false;
-      btn.textContent = '测试';
-      return;
-    }
-
-    var results = result.results || [];
-    var html = '';
-    results.forEach(function(r) {
-      var color = r.success ? 'var(--success)' : 'var(--danger)';
-      var status = r.success ? r.latency + 'ms' : r.error;
-      html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;">';
-      html += '<span style="color:var(--text-secondary);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;max-width:70%;">' + r.proxy + '</span>';
-      html += '<span style="color:' + color + ';font-weight:600;">' + status + '</span>';
-      html += '</div>';
-    });
-
-    var summary = result.success + '/' + result.total + ' 可用';
-    var summaryColor = result.success > 0 ? 'var(--success)' : 'var(--danger)';
-    html = '<div style="font-size:12px;font-weight:600;margin-bottom:8px;color:' + summaryColor + ';">' + summary + '</div>' + html;
-
-    resultDiv.innerHTML = html;
-    resultDiv.style.display = 'block';
-  } catch(e) {
-    showToast('代理测试失败: ' + e.message, 'error');
-  }
-
-  btn.disabled = false;
-  btn.textContent = '测试';
 }
 
 async function startTask() {
@@ -167,30 +194,6 @@ function confirmAction() {
   if (cb) cb();
 }
 
-async function logoutLicense() {
-  showConfirmModal('确认退出卡密？', '此操作会清除本地授权信息，需要重新激活卡密才能使用。', '确认退出', async function() {
-    try {
-      var result = await window.go.main.App.LogoutLicense();
-      if (result.success) {
-        document.getElementById('main-container').style.display = 'none';
-        document.getElementById('license-overlay').classList.add('show');
-        document.getElementById('license-key').value = '';
-        var btn = document.getElementById('btn-verify-license');
-        btn.disabled = false;
-        btn.textContent = '验证卡密';
-        var errorMsg = document.getElementById('license-error');
-        errorMsg.style.display = 'none';
-        loadHealthCheckStatus();
-        showToast('已退出卡密');
-      } else {
-        showToast(result.message || '退出失败', 'error');
-      }
-    } catch(e) {
-      showToast('退出失败: ' + e.message, 'error');
-    }
-  });
-}
-
 async function stopTask() {
   try {
     var result = await window.go.main.App.StopTask();
@@ -203,48 +206,6 @@ async function stopTask() {
   } catch(e) {
     showToast('停止失败: ' + (e.message || e), 'error');
   }
-}
-
-function toggleHealthCheck() {
-  showToast('健康检查功能暂不可用', 'error');
-}
-function updateHealthCheckBtn() {}
-var _healthInterval = null;
-
-async function _doHealthCheck() {
-  if (!window.go || !window.go.main || !window.go.main.App || !window.go.main.App.CheckServerHealth) return;
-  var dot = document.getElementById('health-dot');
-  var text = document.getElementById('health-text');
-  if (!dot || !text) return;
-  try {
-    var result = await window.go.main.App.CheckServerHealth();
-    if (result.online) {
-      dot.style.background = '#22c55e';
-      text.style.color = '#22c55e';
-      text.textContent = '验证服务器连接正常  延迟 ' + result.latency + 'ms';
-    } else {
-      dot.style.background = '#ef4444';
-      text.style.color = '#ef4444';
-      text.textContent = result.message || '无法连接验证服务器，请检查网络';
-    }
-  } catch(e) {
-    if (dot) { dot.style.background = '#ef4444'; }
-    if (text) { text.style.color = '#ef4444'; text.textContent = '检测服务器失败，请检查网络'; }
-  }
-}
-
-function loadHealthCheckStatus() {
-  _doHealthCheck();
-  if (_healthInterval) clearInterval(_healthInterval);
-  _healthInterval = setInterval(function() {
-    var overlay = document.getElementById('license-overlay');
-    if (!overlay || !overlay.classList.contains('show')) {
-      clearInterval(_healthInterval);
-      _healthInterval = null;
-      return;
-    }
-    _doHealthCheck();
-  }, 5000);
 }
 
 // ===== 更新系统 =====
@@ -357,6 +318,12 @@ setInterval(async function() {
   try {
     var s = await window.go.main.App.GetStatus();
     updateUIStatus(s.running);
+    // 注册页状态徽章
+    var regBadge = document.getElementById('reg-status-badge');
+    if (regBadge) {
+      regBadge.textContent = s.running ? '运行中' : '空闲';
+      regBadge.className = 'db-badge ' + (s.running ? 'db-badge-running' : 'db-badge-idle');
+    }
     document.getElementById('st-progress').textContent = s.completed + '/' + s.total;
     document.getElementById('st-success').textContent = s.success;
     document.getElementById('st-failed').textContent = s.failed;
@@ -371,18 +338,6 @@ setInterval(async function() {
     // 状态指示灯
     var dot = document.getElementById('st-dot');
     if (s.running) { dot.classList.add('running'); } else { dot.classList.remove('running'); }
-    // 任务状态文字
-    var statusEl = document.getElementById('st-task-status');
-    if (s.running) {
-      statusEl.textContent = '运行中';
-      statusEl.style.color = 'var(--success)';
-    } else if (s.completed > 0) {
-      statusEl.textContent = '已完成';
-      statusEl.style.color = 'var(--accent)';
-    } else {
-      statusEl.textContent = '空闲';
-      statusEl.style.color = 'var(--text-muted)';
-    }
     // 平均耗时
     var avgEl = document.getElementById('st-avg');
     if (s.completed > 0 && s.elapsed > 0) {
@@ -414,11 +369,7 @@ setInterval(async function() {
     window._kiroLogs = kiroLogs;
     renderUnifiedLogs();
   } catch(e) {}
-  try {
-    var data3 = await window.go.main.App.GetResults(currentPage, pageSize, _resultStatusFilter || 'all');
-    renderResultsPage(data3.accounts || [], data3.total || 0, data3.page || 1);
-  } catch(e) {}
-  
+
   var now = Date.now();
   if (now - lastOutlookUpdate > 2000) {
     lastOutlookUpdate = now;

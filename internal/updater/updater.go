@@ -1,7 +1,6 @@
 package updater
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,15 +14,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"reg_go/internal/crypto"
-	"reg_go/internal/device"
-	"reg_go/internal/license"
-	"reg_go/internal/session"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -38,39 +31,14 @@ type VersionInfo struct {
 	Required    bool   `json:"required"`
 }
 
-// cachedVersionInfo 缓存服务端返回的版本信息（防止前端伪造下载地址）
 var (
 	cachedVersionInfo *VersionInfo
 	cachedVersionMu   sync.Mutex
 )
 
-// isNewerVersion 比较语义化版本号，返回 true 当 remote 严格大于 local
-func isNewerVersion(remote, local string) bool {
-	parse := func(v string) []int {
-		v = strings.TrimPrefix(v, "v")
-		parts := strings.Split(v, ".")
-		nums := make([]int, 3)
-		for i := 0; i < len(parts) && i < 3; i++ {
-			nums[i], _ = strconv.Atoi(parts[i])
-		}
-		return nums
-	}
-	r := parse(remote)
-	l := parse(local)
-	for i := 0; i < 3; i++ {
-		if r[i] > l[i] {
-			return true
-		}
-		if r[i] < l[i] {
-			return false
-		}
-	}
-	return false
-}
-
 // GetCurrentVersion 获取当前版本号
 func GetCurrentVersion() string {
-	return "v2.3.0"
+	return "v1.0.1"
 }
 
 // CleanupTemp 清理更新遗留的临时文件
@@ -86,251 +54,120 @@ func CleanupTemp() {
 	}
 }
 
-// CheckForUpdatesInBackground 后台延迟检查更新（启动时调用）
-func CheckForUpdatesInBackground(ctx context.Context) {
-	serverURL := license.GetServerURL()
-
-	// 延迟 2 秒后检查，避免阻塞启动
-	time.Sleep(2 * time.Second)
-
-	// 读取卡密配置
-	encryptedData, err := license.LoadFromRegistry()
-	if err != nil {
-		log.Printf("检查更新跳过: 未激活卡密")
-		return
-	}
-
-	// 解密配置
-	decryptedData, err := crypto.DecryptLocal(encryptedData)
-	if err != nil {
-		log.Printf("检查更新跳过: 卡密配置异常")
-		return
-	}
-
-	var cfg license.Config
-	if err := json.Unmarshal([]byte(decryptedData), &cfg); err != nil {
-		log.Printf("检查更新跳过: 卡密配置解析失败")
-		return
-	}
-
-	deviceID := device.GetDeviceID()
-
-	// 构造请求数据
-	reqData := map[string]string{
-		"key":       cfg.LicenseKey,
-		"device_id": deviceID,
-	}
-	reqJSON, _ := json.Marshal(reqData)
-
-	// 加密请求
-	encrypted, err := crypto.Encrypt(string(reqJSON))
-	if err != nil {
-		log.Printf("检查更新跳过: 安全会话未建立")
-		return
-	}
-
-	// 发送加密请求
-	payload := map[string]string{"data": encrypted}
-	payloadJSON, _ := json.Marshal(payload)
-
-	httpReq, _ := http.NewRequest("POST", serverURL+"/api/version", bytes.NewReader(payloadJSON))
-	httpReq.Header.Set("Content-Type", "application/json")
-	if sid := session.Manager.GetSessionID(); sid != "" {
-		httpReq.Header.Set("X-Session-ID", sid)
-	}
-	if sk := session.Manager.GetSessionKey(); sk != nil {
-		sig := crypto.HMACSign(payloadJSON, sk)
-		httpReq.Header.Set("X-Signature", sig)
-	}
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-	resp, err := httpClient.Do(httpReq)
-	if err != nil {
-		log.Printf("检查更新失败: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized {
-			log.Printf("检查更新失败: 授权无效，卡密可能已过期或被封禁")
-		} else {
-			var errResp map[string]string
-			if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil && errResp["error"] != "" {
-				log.Printf("检查更新失败: %s", errResp["error"])
-			} else {
-				log.Printf("检查更新失败: HTTP %d", resp.StatusCode)
-			}
-		}
-		return
-	}
-
-	var encryptedResp map[string]string
-	if err := json.NewDecoder(resp.Body).Decode(&encryptedResp); err != nil {
-		log.Printf("检查更新失败: 解析响应失败")
-		return
-	}
-
-	// 解密响应
-	decrypted, err := crypto.Decrypt(encryptedResp["data"])
-	if err != nil {
-		log.Printf("检查更新失败: 解密响应失败")
-		return
-	}
-
-	var versionInfo VersionInfo
-	if err := json.Unmarshal([]byte(decrypted), &versionInfo); err != nil {
-		log.Printf("检查更新失败: 解析版本信息失败")
-		return
-	}
-
-	currentVersion := GetCurrentVersion()
-	if isNewerVersion(versionInfo.Version, currentVersion) {
-		log.Printf("发现新版本: %s (当前: %s)", versionInfo.Version, currentVersion)
-
-		// 缓存版本信息（包含安全下载地址和哈希）
-		cachedVersionMu.Lock()
-		cachedVersionInfo = &versionInfo
-		cachedVersionMu.Unlock()
-
-		// 通知前端有新版本（注意：不向前端暴露 downloadURL）
-		if ctx != nil {
-			wailsRuntime.EventsEmit(ctx, "update-available", map[string]interface{}{
-				"currentVersion": currentVersion,
-				"latestVersion":  versionInfo.Version,
-				"version":        versionInfo.Version,
-				"releaseDate":    versionInfo.ReleaseDate,
-				"changelog":      versionInfo.Changelog,
-				"required":       versionInfo.Required,
-			})
-		}
-	} else {
-		log.Printf("当前已是最新版本: %s", currentVersion)
-	}
+// githubRelease GitHub Release API 响应
+type githubRelease struct {
+	TagName     string `json:"tag_name"`
+	Name        string `json:"name"`
+	Body        string `json:"body"`
+	PublishedAt string `json:"published_at"`
+	Assets      []struct {
+		Name               string `json:"name"`
+		BrowserDownloadURL string `json:"browser_download_url"`
+		Size               int64  `json:"size"`
+	} `json:"assets"`
 }
 
-// CheckUpdate 手动检查更新
+const githubReleasesURL = "https://api.github.com/repos/huey1in/kiro_reg/releases/latest"
+
+// semverGreater 返回 a 是否语义上大于 b（格式 vX.Y.Z 或 X.Y.Z）
+func semverGreater(a, b string) bool {
+	parse := func(v string) [3]int {
+		v = strings.TrimPrefix(v, "v")
+		parts := strings.SplitN(v, ".", 3)
+		var nums [3]int
+		for i, p := range parts {
+			if i >= 3 {
+				break
+			}
+			fmt.Sscanf(p, "%d", &nums[i])
+		}
+		return nums
+	}
+	va, vb := parse(a), parse(b)
+	for i := 0; i < 3; i++ {
+		if va[i] != vb[i] {
+			return va[i] > vb[i]
+		}
+	}
+	return false
+}
+
+// CheckUpdate 检查 GitHub 最新 Release
 func CheckUpdate() map[string]interface{} {
-	serverURL := license.GetServerURL()
+	currentVersion := GetCurrentVersion()
 
-	// 读取卡密配置
-	encryptedData, err := license.LoadFromRegistry()
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", githubReleasesURL, nil)
 	if err != nil {
-		return map[string]interface{}{
-			"error": "请先激活卡密后再检查更新",
-		}
+		return map[string]interface{}{"error": "构建请求失败: " + err.Error()}
 	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "kiro-reg/"+currentVersion)
 
-	// 解密配置
-	decryptedData, err := crypto.DecryptLocal(encryptedData)
+	resp, err := client.Do(req)
 	if err != nil {
-		return map[string]interface{}{
-			"error": "卡密配置异常，请退出卡密后重新激活",
-		}
-	}
-
-	var cfg license.Config
-	if err := json.Unmarshal([]byte(decryptedData), &cfg); err != nil {
-		return map[string]interface{}{
-			"error": "卡密配置解析失败，请退出卡密后重新激活",
-		}
-	}
-
-	deviceID := device.GetDeviceID()
-
-	// 构造请求数据
-	reqData := map[string]string{
-		"key":       cfg.LicenseKey,
-		"device_id": deviceID,
-	}
-	reqJSON, _ := json.Marshal(reqData)
-
-	// 加密请求
-	encrypted, err := crypto.Encrypt(string(reqJSON))
-	if err != nil {
-		return map[string]interface{}{
-			"error": "请先激活卡密后再检查更新",
-		}
-	}
-
-	// 发送加密请求
-	payload := map[string]string{"data": encrypted}
-	payloadJSON, _ := json.Marshal(payload)
-
-	httpReq, _ := http.NewRequest("POST", serverURL+"/api/version", bytes.NewReader(payloadJSON))
-	httpReq.Header.Set("Content-Type", "application/json")
-	if sid := session.Manager.GetSessionID(); sid != "" {
-		httpReq.Header.Set("X-Session-ID", sid)
-	}
-	if sk := session.Manager.GetSessionKey(); sk != nil {
-		sig := crypto.HMACSign(payloadJSON, sk)
-		httpReq.Header.Set("X-Signature", sig)
-	}
-	httpClient := &http.Client{Timeout: 10 * time.Second}
-	resp, err := httpClient.Do(httpReq)
-	if err != nil {
-		return map[string]interface{}{
-			"error": "检查更新失败: " + err.Error(),
-		}
+		return map[string]interface{}{"error": "检查更新失败: " + err.Error()}
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusUnauthorized {
-			return map[string]interface{}{
-				"error": "授权无效，请先验证卡密",
-			}
-		}
-		var errResp map[string]string
-		if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil && errResp["error"] != "" {
-			return map[string]interface{}{
-				"error": "检查更新失败: " + errResp["error"],
-			}
-		}
+	if resp.StatusCode == 404 {
 		return map[string]interface{}{
-			"error": fmt.Sprintf("检查更新失败: HTTP %d", resp.StatusCode),
+			"hasUpdate":      false,
+			"currentVersion": currentVersion,
+			"latestVersion":  currentVersion,
+			"message":        "暂无发布版本",
+		}
+	}
+	if resp.StatusCode != 200 {
+		return map[string]interface{}{"error": fmt.Sprintf("GitHub API 返回 %d", resp.StatusCode)}
+	}
+
+	var release githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return map[string]interface{}{"error": "解析响应失败: " + err.Error()}
+	}
+
+	latestVersion := release.TagName
+	if latestVersion == "" {
+		latestVersion = release.Name
+	}
+
+	hasUpdate := latestVersion != "" && semverGreater(latestVersion, currentVersion)
+
+	// 找到 Windows 可执行文件下载地址
+	downloadURL := ""
+	for _, asset := range release.Assets {
+		name := strings.ToLower(asset.Name)
+		if strings.HasSuffix(name, ".exe") || (strings.Contains(name, "windows") && !strings.HasSuffix(name, ".sha256")) {
+			downloadURL = asset.BrowserDownloadURL
+			break
 		}
 	}
 
-	var encryptedResp map[string]string
-	if err := json.NewDecoder(resp.Body).Decode(&encryptedResp); err != nil {
-		return map[string]interface{}{
-			"error": "解析响应失败",
-		}
-	}
-
-	// 解密响应
-	decrypted, err := crypto.Decrypt(encryptedResp["data"])
-	if err != nil {
-		return map[string]interface{}{
-			"error": "解密响应失败",
-		}
-	}
-
-	var versionInfo VersionInfo
-	if err := json.Unmarshal([]byte(decrypted), &versionInfo); err != nil {
-		return map[string]interface{}{
-			"error": "解析版本信息失败: " + err.Error(),
-		}
-	}
-
-	currentVersion := GetCurrentVersion()
-	hasUpdate := isNewerVersion(versionInfo.Version, currentVersion)
-
-	// 缓存版本信息（包含安全下载地址和哈希）
-	if hasUpdate {
+	// 缓存版本信息供 DownloadUpdate 使用
+	if hasUpdate && downloadURL != "" {
 		cachedVersionMu.Lock()
-		cachedVersionInfo = &versionInfo
+		cachedVersionInfo = &VersionInfo{
+			Version:     latestVersion,
+			DownloadURL: downloadURL,
+			ReleaseDate: release.PublishedAt,
+			Changelog:   release.Body,
+		}
 		cachedVersionMu.Unlock()
 	}
 
-	// 注意：不向前端暴露 downloadURL 和 sha256
+	releaseDate := ""
+	if len(release.PublishedAt) >= 10 {
+		releaseDate = release.PublishedAt[:10]
+	}
+
 	return map[string]interface{}{
 		"hasUpdate":      hasUpdate,
 		"currentVersion": currentVersion,
-		"latestVersion":  versionInfo.Version,
-		"releaseDate":    versionInfo.ReleaseDate,
-		"changelog":      versionInfo.Changelog,
-		"required":       versionInfo.Required,
+		"latestVersion":  latestVersion,
+		"releaseDate":    releaseDate,
+		"changelog":      release.Body,
+		"downloadURL":    downloadURL,
 	}
 }
 
@@ -648,33 +485,4 @@ exit
 		"success": true,
 		"message": "更新成功，程序即将重启",
 	}
-}
-
-// CopyFile 复制文件（带 sync 和 close 错误检查）
-func CopyFile(src, dst string) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-
-	if _, err = io.Copy(destFile, sourceFile); err != nil {
-		destFile.Close()
-		os.Remove(dst)
-		return err
-	}
-
-	// 确保数据写入磁盘
-	if err := destFile.Sync(); err != nil {
-		destFile.Close()
-		os.Remove(dst)
-		return err
-	}
-
-	return destFile.Close()
 }

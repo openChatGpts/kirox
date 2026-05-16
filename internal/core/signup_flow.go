@@ -314,9 +314,3 @@ func (r *Registrar) Step10GetOTP() (string, error) {
 	log.Printf("验证码: %s", code)
 	return code, nil
 }
-
-// mustMarshal JSON 序列化辅助函数
-func mustMarshal(v interface{}) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	return string(b)
-}

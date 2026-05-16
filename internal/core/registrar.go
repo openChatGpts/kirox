@@ -15,6 +15,7 @@ import (
 	tls_client "github.com/bogdanfinn/tls-client"
 
 	"reg_go/internal/browser"
+	"reg_go/internal/crypto"
 	"reg_go/internal/email"
 	httputil "reg_go/internal/http"
 )
@@ -46,14 +47,16 @@ type Registrar struct {
 	SSOToken         string
 	KiroCodeVerifier string
 	KiroState        string
+	KiroClientID     string
+	KiroClientSecret string
+	KiroRedirectPort int
 
 	// 客户端扩展: 任务上下文
-	Ctx       context.Context // 用于取消任务
-	TaskLabel string          // 任务标签
+	Ctx       context.Context
+	TaskLabel string
 
-	// 客户端扩展: 远程加密回调
-	EncryptFP  func(jsonStr string) (string, error)
-	EncryptJWE func(password string, publicKey map[string]string, issuer, audience, region string) (string, error)
+	// 本地加密
+	JWE *crypto.JWEEncryptor
 
 	// Outlook 模式: 发送验证码前的邮件数量
 	OutlookMailCount int
@@ -74,6 +77,7 @@ func NewRegistrar(cfg *Config) *Registrar {
 		Identity:  identity,
 		FPCtx:     browser.NewFPContext(identity),
 		VisitorID: httputil.VisitorID(),
+		JWE:       &crypto.JWEEncryptor{},
 	}
 }
 
@@ -110,7 +114,7 @@ func (r *Registrar) DoPost(url string, payload interface{}, headers map[string]s
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			log.Printf("[HTTP] POST %s 重试 (%d/%d), 等待退避...", url, attempt, maxRetries)
+			log.Printf("[HTTP] POST 重试 (%d/%d), 等待退避...", attempt, maxRetries)
 			time.Sleep(retryBackoff(attempt))
 		}
 
@@ -145,7 +149,7 @@ func (r *Registrar) DoGet(url string, headers map[string]string) ([]byte, int, m
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			log.Printf("[HTTP] GET %s 重试 (%d/%d), 等待退避...", url, attempt, maxRetries)
+			log.Printf("[HTTP] GET 重试 (%d/%d), 等待退避...", attempt, maxRetries)
 			time.Sleep(retryBackoff(attempt))
 		}
 
@@ -180,7 +184,7 @@ func (r *Registrar) DoPostRaw(url string, payload interface{}, headers map[strin
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			log.Printf("[HTTP] POST %s 重试 (%d/%d), 等待退避...", url, attempt, maxRetries)
+			log.Printf("[HTTP] POST 重试 (%d/%d), 等待退避...", attempt, maxRetries)
 			time.Sleep(retryBackoff(attempt))
 		}
 
@@ -241,15 +245,7 @@ func (r *Registrar) GenFPWithTime(pageType, eventType string, timeOnPage, emailL
 	}
 
 	fpJSON := browser.GenerateFingerprintJSON(r.Identity, loc, ref, r.FPCtx, pageType, eventType, timeOnPage, emailLen, emailAddr)
-	if r.EncryptFP != nil {
-		encrypted, err := r.EncryptFP(fpJSON)
-		if err != nil {
-			log.Printf("[指纹] 远程加密失败: %v", err)
-			return ""
-		}
-		return encrypted
-	}
-	return ""
+	return crypto.EncryptFingerprint(fpJSON)
 }
 
 // Step1OIDC OIDC 注册
